@@ -26,6 +26,7 @@ package net.sf.mpxj.mpp;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Date;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -243,10 +244,10 @@ class Props extends MPPComponent
 
       pw.println("BEGIN Props");
 
-      for (Integer key : m_map.keySet())
+      for (Map.Entry<Integer, byte[]> entry : m_map.entrySet())
       {
-         pw.println("   Key: " + key + " Value: ");
-         pw.println(MPPUtility.hexdump(m_map.get(key), true, 16, "      "));
+         pw.println("   Key: " + entry.getKey() + " Value: ");
+         pw.println(MPPUtility.hexdump(entry.getValue(), true, 16, "      "));
       }
 
       pw.println("END Props");
@@ -267,6 +268,7 @@ class Props extends MPPComponent
    public static final Integer CURRENCY_PLACEMENT = Integer.valueOf(37748753);
    public static final Integer CURRENCY_DIGITS = Integer.valueOf(37748754);
 
+   public static final Integer CRITICAL_SLACK_LIMIT = Integer.valueOf(37748756);
    public static final Integer DURATION_UNITS = Integer.valueOf(37748757);
    public static final Integer WORK_UNITS = Integer.valueOf(37748758);
    public static final Integer TASK_UPDATES_RESOURCE = Integer.valueOf(37748761);

@@ -113,15 +113,21 @@ abstract class AbstractVarMeta extends MPPComponent implements VarMeta
    }
 
    /**
-    * This method retrieves the offset of the data item at
-    * the position defined by the index parameter.
+    * Allows subclasses to provide the array of offsets.
     *
-    * @param index index of item in the block
-    * @return offset of the item in the block
+    * @param offsets array of offsets
     */
-   @Override public int getOffset(int index)
+   protected void setOffsets(int[] offsets)
    {
-      return (m_offsets[index]);
+      m_offsets = offsets;
+   }
+
+   /**
+    * {@inheritDoc}
+    */
+   @Override public int[] getOffsets()
+   {
+      return m_offsets;
    }
 
    /**
@@ -179,10 +185,11 @@ abstract class AbstractVarMeta extends MPPComponent implements VarMeta
       pw.println("   Item count: " + m_itemCount);
       pw.println("   Data size: " + m_dataSize);
 
-      for (Integer uniqueID : m_table.keySet())
+      for (Map.Entry<Integer, Map<Integer, Integer>> tableEntry : m_table.entrySet())
       {
+         Integer uniqueID = tableEntry.getKey();
          pw.println("   Entries for Unique ID: " + uniqueID);
-         Map<Integer, Integer> map = m_table.get(uniqueID);
+         Map<Integer, Integer> map = tableEntry.getValue();
          for (Map.Entry<Integer, Integer> entry : map.entrySet())
          {
             FieldType fieldType = fieldMap == null ? null : fieldMap.getFieldTypeFromVarDataKey(entry.getKey());
@@ -202,6 +209,6 @@ abstract class AbstractVarMeta extends MPPComponent implements VarMeta
    //protected int m_unknown2;
    //protected int m_unknown3;
    protected int m_dataSize;
-   protected int[] m_offsets;
+   private int[] m_offsets;
    protected Map<Integer, Map<Integer, Integer>> m_table = new TreeMap<Integer, Map<Integer, Integer>>();
 }

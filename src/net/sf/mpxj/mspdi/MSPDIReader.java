@@ -44,6 +44,10 @@ import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import javax.xml.transform.sax.SAXSource;
 
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
+
 import net.sf.mpxj.AssignmentField;
 import net.sf.mpxj.Availability;
 import net.sf.mpxj.AvailabilityTable;
@@ -98,10 +102,6 @@ import net.sf.mpxj.mspdi.schema.Project.Resources.Resource.AvailabilityPeriods.A
 import net.sf.mpxj.mspdi.schema.Project.Resources.Resource.Rates;
 import net.sf.mpxj.mspdi.schema.TimephasedDataType;
 import net.sf.mpxj.reader.AbstractProjectReader;
-
-import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
-import org.xml.sax.XMLReader;
 
 /**
  * This class creates a new ProjectFile instance by reading an MSPDI file.
@@ -294,6 +294,26 @@ public final class MSPDIReader extends AbstractProjectReader
       properties.setUniqueID(project.getUID());
       properties.setUpdatingTaskStatusUpdatesResourceStatus(BooleanHelper.getBoolean(project.isTaskUpdatesResource()));
       properties.setWeekStartDay(DatatypeConverter.parseDay(project.getWeekStartDay()));
+      updateScheduleSource(properties);
+   }
+
+   /**
+    * Populate the properties indicating the source of this schedule.
+    *
+    * @param properties project properties
+    */
+   private void updateScheduleSource(ProjectProperties properties)
+   {
+      // Rudimentary identification of schedule source
+      if (properties.getCompany() != null && properties.getCompany().equals("Synchro Software Ltd"))
+      {
+         properties.setFileApplication("Synchro");
+      }
+      else
+      {
+         properties.setFileApplication("Microsoft");
+      }
+      properties.setFileType("MSPDI");
    }
 
    /**
@@ -514,28 +534,35 @@ public final class MSPDIReader extends AbstractProjectReader
          {
             Date fromDate = DatatypeConverter.parseDate(exception.getTimePeriod().getFromDate());
             Date toDate = DatatypeConverter.parseDate(exception.getTimePeriod().getToDate());
-            ProjectCalendarException bce = bc.addCalendarException(fromDate, toDate);
 
-            Project.Calendars.Calendar.Exceptions.Exception.WorkingTimes times = exception.getWorkingTimes();
-            if (times != null)
+            // Vico Schedule Planner seems to write start and end dates to FromeTime and ToTime
+            // rather than FromDate and ToDate. This is plain wrong, and appears to be ignored by MS Project
+            // so we will ignore it too!
+            if (fromDate != null && toDate != null)
             {
-               List<Project.Calendars.Calendar.Exceptions.Exception.WorkingTimes.WorkingTime> time = times.getWorkingTime();
-               for (Project.Calendars.Calendar.Exceptions.Exception.WorkingTimes.WorkingTime period : time)
+               ProjectCalendarException bce = bc.addCalendarException(fromDate, toDate);
+
+               Project.Calendars.Calendar.Exceptions.Exception.WorkingTimes times = exception.getWorkingTimes();
+               if (times != null)
                {
-                  Date startTime = DatatypeConverter.parseTime(period.getFromTime());
-                  Date endTime = DatatypeConverter.parseTime(period.getToTime());
-
-                  if (startTime != null && endTime != null)
+                  List<Project.Calendars.Calendar.Exceptions.Exception.WorkingTimes.WorkingTime> time = times.getWorkingTime();
+                  for (Project.Calendars.Calendar.Exceptions.Exception.WorkingTimes.WorkingTime period : time)
                   {
-                     if (startTime.getTime() >= endTime.getTime())
-                     {
-                        Calendar cal = Calendar.getInstance();
-                        cal.setTime(endTime);
-                        cal.add(Calendar.DAY_OF_YEAR, 1);
-                        endTime = cal.getTime();
-                     }
+                     Date startTime = DatatypeConverter.parseTime(period.getFromTime());
+                     Date endTime = DatatypeConverter.parseTime(period.getToTime());
 
-                     bce.addRange(new DateRange(startTime, endTime));
+                     if (startTime != null && endTime != null)
+                     {
+                        if (startTime.getTime() >= endTime.getTime())
+                        {
+                           Calendar cal = Calendar.getInstance();
+                           cal.setTime(endTime);
+                           cal.add(Calendar.DAY_OF_YEAR, 1);
+                           endTime = cal.getTime();
+                        }
+
+                        bce.addRange(new DateRange(startTime, endTime));
+                     }
                   }
                }
             }
@@ -1101,6 +1128,8 @@ public final class MSPDIReader extends AbstractProjectReader
          mpx.setWork(DatatypeConverter.parseDuration(m_projectFile, durationFormat, xml.getWork()));
          mpx.setWorkVariance(Duration.getInstance(NumberHelper.getDouble(xml.getWorkVariance()) / 1000, TimeUnit.MINUTES));
 
+         validateFinishDate(mpx);
+
          // read last to ensure correct caching
          mpx.setTotalSlack(DatatypeConverter.parseDurationInThousanthsOfMinutes(xml.getTotalSlack()));
          mpx.setCritical(BooleanHelper.getBoolean(xml.isCritical()));
@@ -1118,6 +1147,37 @@ public final class MSPDIReader extends AbstractProjectReader
       m_eventManager.fireTaskReadEvent(mpx);
 
       return mpx;
+   }
+
+   /**
+    * When projectmanager.com exports schedules as MSPDI (via Aspose tasks)
+    * they do not have finish dates, just a start date and a duration.
+    * This method populates finish dates.
+    *
+    * @param task task to validate
+    */
+   private void validateFinishDate(Task task)
+   {
+      if (task.getFinish() == null)
+      {
+         Date startDate = task.getStart();
+         if (startDate != null)
+         {
+            if (task.getMilestone())
+            {
+               task.setFinish(startDate);
+            }
+            else
+            {
+               Duration duration = task.getDuration();
+               if (duration != null)
+               {
+                  ProjectCalendar calendar = task.getEffectiveCalendar();
+                  task.setFinish(calendar.getDate(startDate, duration, false));
+               }
+            }
+         }
+      }
    }
 
    /**
@@ -1294,43 +1354,36 @@ public final class MSPDIReader extends AbstractProjectReader
       if (taskUID != null && resourceUID != null)
       {
          Task task = m_projectFile.getTaskByUniqueID(Integer.valueOf(taskUID.intValue()));
-         Resource resource = m_projectFile.getResourceByUniqueID(Integer.valueOf(resourceUID.intValue()));
-
-         //System.out.println(task);
-         ProjectCalendar calendar = null;
-         if (resource != null)
-         {
-            calendar = resource.getResourceCalendar();
-         }
-
-         if (calendar == null)
-         {
-            calendar = task.getCalendar();
-         }
-
-         if (calendar == null)
-         {
-            calendar = m_projectFile.getDefaultCalendar();
-         }
-
-         LinkedList<TimephasedWork> timephasedComplete = readTimephasedAssignment(calendar, assignment, 2);
-         LinkedList<TimephasedWork> timephasedPlanned = readTimephasedAssignment(calendar, assignment, 1);
-         boolean raw = true;
-
-         if (isSplit(calendar, timephasedComplete) || isSplit(calendar, timephasedPlanned))
-         {
-            task.setSplits(new LinkedList<DateRange>());
-            normaliser.normalise(calendar, timephasedComplete);
-            normaliser.normalise(calendar, timephasedPlanned);
-            splitFactory.processSplitData(task, timephasedComplete, timephasedPlanned);
-            raw = false;
-         }
-
-         DefaultTimephasedWorkContainer timephasedCompleteData = new DefaultTimephasedWorkContainer(calendar, normaliser, timephasedComplete, raw);
-         DefaultTimephasedWorkContainer timephasedPlannedData = new DefaultTimephasedWorkContainer(calendar, normaliser, timephasedPlanned, raw);
-
          if (task != null)
          {
+            Resource resource = m_projectFile.getResourceByUniqueID(Integer.valueOf(resourceUID.intValue()));
+            ProjectCalendar calendar = null;
+            if (resource != null)
+            {
+               calendar = resource.getResourceCalendar();
+            }
+
+            if (calendar == null || task.getIgnoreResourceCalendar())
+            {
+               calendar = task.getEffectiveCalendar();
+            }
+
+            LinkedList<TimephasedWork> timephasedComplete = readTimephasedAssignment(calendar, assignment, 2);
+            LinkedList<TimephasedWork> timephasedPlanned = readTimephasedAssignment(calendar, assignment, 1);
+            boolean raw = true;
+
+            if (isSplit(calendar, timephasedComplete) || isSplit(calendar, timephasedPlanned))
+            {
+               task.setSplits(new LinkedList<DateRange>());
+               normaliser.normalise(calendar, timephasedComplete);
+               normaliser.normalise(calendar, timephasedPlanned);
+               splitFactory.processSplitData(task, timephasedComplete, timephasedPlanned);
+               raw = false;
+            }
+
+            DefaultTimephasedWorkContainer timephasedCompleteData = new DefaultTimephasedWorkContainer(calendar, normaliser, timephasedComplete, raw);
+            DefaultTimephasedWorkContainer timephasedPlannedData = new DefaultTimephasedWorkContainer(calendar, normaliser, timephasedPlanned, raw);
+
             ResourceAssignment mpx = task.addResourceAssignment(resource);
 
             mpx.setActualCost(DatatypeConverter.parseCurrency(assignment.getActualCost()));

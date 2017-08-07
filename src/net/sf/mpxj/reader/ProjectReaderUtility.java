@@ -29,16 +29,21 @@ import java.util.Set;
 
 import net.sf.mpxj.MPXJException;
 import net.sf.mpxj.asta.AstaFileReader;
+import net.sf.mpxj.fasttrack.FastTrackReader;
 import net.sf.mpxj.mpd.MPDDatabaseReader;
 import net.sf.mpxj.mpp.MPPReader;
 import net.sf.mpxj.mpx.MPXReader;
 import net.sf.mpxj.mspdi.MSPDIReader;
+import net.sf.mpxj.phoenix.PhoenixReader;
 import net.sf.mpxj.planner.PlannerReader;
 import net.sf.mpxj.primavera.PrimaveraPMFileReader;
 import net.sf.mpxj.primavera.PrimaveraXERFileReader;
+import net.sf.mpxj.projectlibre.ProjectLibreReader;
 
 /**
- * This class contains utility methods for working with ProjectReaderss.
+ * This class contains utility methods for working with ProjectReaders.
+ * Note that you should probably be using the UniversalProjectReader instead
+ * as it can distinguish the correct file type based on content.
  */
 public final class ProjectReaderUtility
 {
@@ -108,5 +113,8 @@ public final class ProjectReaderUtility
       READER_MAP.put("XER", PrimaveraXERFileReader.class);
       READER_MAP.put("PMXML", PrimaveraPMFileReader.class);
       READER_MAP.put("PP", AstaFileReader.class);
+      READER_MAP.put("PPX", PhoenixReader.class);
+      READER_MAP.put("FTS", FastTrackReader.class);
+      READER_MAP.put("POD", ProjectLibreReader.class);
    }
 }

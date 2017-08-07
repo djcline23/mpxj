@@ -25,6 +25,7 @@ package net.sf.mpxj.json;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -46,6 +47,7 @@ import net.sf.mpxj.ResourceField;
 import net.sf.mpxj.Task;
 import net.sf.mpxj.TaskField;
 import net.sf.mpxj.TimeUnit;
+import net.sf.mpxj.common.CharsetHelper;
 import net.sf.mpxj.writer.AbstractProjectWriter;
 
 /**
@@ -75,6 +77,26 @@ public final class JsonWriter extends AbstractProjectWriter
    }
 
    /**
+    * Retrieve the encoding to used when writing the JSON file.
+    *
+    * @return encoding
+    */
+   public Charset getEncoding()
+   {
+      return m_encoding;
+   }
+
+   /**
+    * Set the encoding to used when writing the JSON file.
+    *
+    * @param encoding encoding to use
+    */
+   public void setEncoding(Charset encoding)
+   {
+      m_encoding = encoding;
+   }
+
+   /**
     * {@inheritDoc}
     */
    @Override public void write(ProjectFile projectFile, OutputStream stream) throws IOException
@@ -82,7 +104,7 @@ public final class JsonWriter extends AbstractProjectWriter
       try
       {
          m_projectFile = projectFile;
-         m_writer = new JsonStreamWriter(stream);
+         m_writer = new JsonStreamWriter(stream, m_encoding);
          m_writer.setPretty(m_pretty);
 
          m_writer.writeStartObject(null);
@@ -325,6 +347,12 @@ public final class JsonWriter extends AbstractProjectWriter
             break;
          }
 
+         case BINARY:
+         {
+            // Don't write binary data
+            break;
+         }
+
          default:
          {
             writeStringField(fieldName, value);
@@ -518,6 +546,9 @@ public final class JsonWriter extends AbstractProjectWriter
    private ProjectFile m_projectFile;
    private JsonStreamWriter m_writer;
    private boolean m_pretty;
+   private Charset m_encoding = DEFAULT_ENCODING;
+
+   private static final Charset DEFAULT_ENCODING = CharsetHelper.UTF8;
 
    private static Map<String, DataType> TYPE_MAP = new HashMap<String, DataType>();
    static

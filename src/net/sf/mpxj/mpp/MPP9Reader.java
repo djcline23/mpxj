@@ -33,6 +33,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.apache.poi.poifs.filesystem.DirectoryEntry;
+import org.apache.poi.poifs.filesystem.DocumentEntry;
+import org.apache.poi.poifs.filesystem.DocumentInputStream;
+
 import net.sf.mpxj.CustomFieldContainer;
 import net.sf.mpxj.DateRange;
 import net.sf.mpxj.Day;
@@ -63,10 +67,6 @@ import net.sf.mpxj.common.MPPTaskField;
 import net.sf.mpxj.common.NumberHelper;
 import net.sf.mpxj.common.Pair;
 import net.sf.mpxj.common.RtfHelper;
-
-import org.apache.poi.poifs.filesystem.DirectoryEntry;
-import org.apache.poi.poifs.filesystem.DocumentEntry;
-import org.apache.poi.poifs.filesystem.DocumentInputStream;
 
 /**
  * This class is used to represent a Microsoft Project MPP9 file. This
@@ -277,10 +277,10 @@ final class MPP9Reader implements MPPVariantReader
             byte subProjectType = itemHeader[16];
             switch (subProjectType)
             {
-            //
-            // Subproject that is no longer inserted. This is a placeholder in order to be
-            // able to always guarantee unique unique ids.
-            //
+               //
+               // Subproject that is no longer inserted. This is a placeholder in order to be
+               // able to always guarantee unique unique ids.
+               //
                case 0x00:
                {
                   offset += 8;
@@ -898,12 +898,14 @@ final class MPP9Reader implements MPPVariantReader
     * @param fieldMap field map
     * @param taskFixedMeta Fixed meta data for this task
     * @param taskFixedData Fixed data for this task
+    * @param taskVarData Variable task data
     * @return Mapping between task identifiers and block position
     */
-   private TreeMap<Integer, Integer> createTaskMap(FieldMap fieldMap, FixedMeta taskFixedMeta, FixedData taskFixedData)
+   private TreeMap<Integer, Integer> createTaskMap(FieldMap fieldMap, FixedMeta taskFixedMeta, FixedData taskFixedData, Var2Data taskVarData)
    {
       TreeMap<Integer, Integer> taskMap = new TreeMap<Integer, Integer>();
       int uniqueIdOffset = fieldMap.getFixedDataOffset(TaskField.UNIQUE_ID);
+      Integer taskNameKey = fieldMap.getVarDataKey(TaskField.NAME);
       int itemCount = taskFixedMeta.getAdjustedItemCount();
       int uniqueID;
       Integer key;
@@ -964,7 +966,8 @@ final class MPP9Reader implements MPPVariantReader
                   {
                      uniqueID = MPPUtility.getInt(data, uniqueIdOffset);
                      key = Integer.valueOf(uniqueID);
-                     if (taskMap.containsKey(key) == false)
+                     // Accept this task if it does not have a deleted unique ID or it has a deleted unique ID but the name is not null
+                     if (!taskMap.containsKey(key) || taskVarData.getUnicodeString(key, taskNameKey) != null)
                      {
                         taskMap.put(key, Integer.valueOf(loop));
                      }
@@ -1292,7 +1295,7 @@ final class MPP9Reader implements MPPVariantReader
 
       processFieldNameAliases(TASK_FIELD_ALIASES, m_projectProps.getByteArray(Props.TASK_FIELD_NAME_ALIASES));
 
-      TreeMap<Integer, Integer> taskMap = createTaskMap(fieldMap, taskFixedMeta, taskFixedData);
+      TreeMap<Integer, Integer> taskMap = createTaskMap(fieldMap, taskFixedMeta, taskFixedData, taskVarData);
       // The var data may not contain all the tasks as tasks with no var data assigned will
       // not be saved in there. Most notably these are tasks with no name. So use the task map
       // which contains all the tasks.
@@ -1434,10 +1437,10 @@ final class MPP9Reader implements MPPVariantReader
 
          switch (task.getConstraintType())
          {
-         //
-         // Adjust the start and finish dates if the task
-         // is constrained to start as late as possible.
-         //
+            //
+            // Adjust the start and finish dates if the task
+            // is constrained to start as late as possible.
+            //
             case AS_LATE_AS_POSSIBLE:
             {
                if (DateHelper.compare(task.getStart(), task.getLateStart()) < 0)
@@ -1485,15 +1488,11 @@ final class MPP9Reader implements MPPVariantReader
          //
          //notes = taskVarData.getString(id, TASK_NOTES);
          notes = task.getNotes();
-         if (notes != null)
+         if (!m_reader.getPreserveNoteFormatting())
          {
-            if (m_reader.getPreserveNoteFormatting() == false)
-            {
-               notes = RtfHelper.strip(notes);
-            }
-
-            task.setNotes(notes);
+            notes = RtfHelper.strip(notes);
          }
+         task.setNotes(notes);
 
          //
          // Set the calendar name
@@ -2045,7 +2044,7 @@ final class MPP9Reader implements MPPVariantReader
          resource.setFlag(8, (metaData[29] & 0x20) != 0);
          resource.setFlag(9, (metaData[29] & 0x40) != 0);
          resource.setFlag(10, (metaData[28] & 0x20) != 0);
-         resource.setFlag(11, (metaData[29] & 0x20) != 0);
+         resource.setFlag(11, (metaData[29] & 0x80) != 0);
          resource.setFlag(12, (metaData[30] & 0x01) != 0);
          resource.setFlag(13, (metaData[30] & 0x02) != 0);
          resource.setFlag(14, (metaData[30] & 0x04) != 0);
@@ -2178,7 +2177,9 @@ final class MPP9Reader implements MPPVariantReader
    {
       DirectoryEntry dir = (DirectoryEntry) m_viewDir.getEntry("CTable");
       //FixedMeta fixedMeta = new FixedMeta(getEncryptableInputStream(dir, "FixedMeta"), 9);
-      FixedData fixedData = new FixedData(110, m_inputStreamFactory.getInstance(dir, "FixedData"));
+      InputStream stream = m_inputStreamFactory.getInstance(dir, "FixedData");
+      int blockSize = stream.available() % 115 == 0 ? 115 : 110;
+      FixedData fixedData = new FixedData(blockSize, stream);
       VarMeta varMeta = new VarMeta9(new DocumentInputStream(((DocumentEntry) dir.getEntry("VarMeta"))));
       Var2Data varData = new Var2Data(varMeta, new DocumentInputStream(((DocumentEntry) dir.getEntry("Var2Data"))));
 
@@ -2205,7 +2206,9 @@ final class MPP9Reader implements MPPVariantReader
       DirectoryEntry dir = (DirectoryEntry) m_viewDir.getEntry("CFilter");
       //FixedMeta fixedMeta = new FixedMeta(new DocumentInputStream(((DocumentEntry) dir.getEntry("FixedMeta"))), 9);
       //FixedData fixedData = new FixedData(fixedMeta, getEncryptableInputStream(dir, "FixedData"));
-      FixedData fixedData = new FixedData(110, m_inputStreamFactory.getInstance(dir, "FixedData"), true);
+      InputStream stream = m_inputStreamFactory.getInstance(dir, "FixedData");
+      int blockSize = stream.available() % 115 == 0 ? 115 : 110;
+      FixedData fixedData = new FixedData(blockSize, stream, true);
       VarMeta varMeta = new VarMeta9(new DocumentInputStream(((DocumentEntry) dir.getEntry("VarMeta"))));
       Var2Data varData = new Var2Data(varMeta, new DocumentInputStream(((DocumentEntry) dir.getEntry("Var2Data"))));
 

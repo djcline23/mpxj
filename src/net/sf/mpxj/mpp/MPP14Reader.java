@@ -294,10 +294,10 @@ final class MPP14Reader implements MPPVariantReader
             //            System.out.println("SubProjectType: " + Integer.toHexString(subProjectType));
             switch (subProjectType)
             {
-            //
-            // Subproject that is no longer inserted. This is a placeholder in order to be
-            // able to always guarantee unique unique ids.
-            //
+               //
+               // Subproject that is no longer inserted. This is a placeholder in order to be
+               // able to always guarantee unique unique ids.
+               //
                case 0x00:
                   //
                   // deleted entry?
@@ -811,12 +811,14 @@ final class MPP14Reader implements MPPVariantReader
     * @param fieldMap field map
     * @param taskFixedMeta Fixed meta data for this task
     * @param taskFixedData Fixed data for this task
+    * @param taskVarData Variable task data
     * @return Mapping between task identifiers and block position
     */
-   private TreeMap<Integer, Integer> createTaskMap(FieldMap fieldMap, FixedMeta taskFixedMeta, FixedData taskFixedData)
+   private TreeMap<Integer, Integer> createTaskMap(FieldMap fieldMap, FixedMeta taskFixedMeta, FixedData taskFixedData, Var2Data taskVarData)
    {
       TreeMap<Integer, Integer> taskMap = new TreeMap<Integer, Integer>();
       int uniqueIdOffset = fieldMap.getFixedDataOffset(TaskField.UNIQUE_ID);
+      Integer taskNameKey = fieldMap.getVarDataKey(TaskField.NAME);
       int itemCount = taskFixedMeta.getAdjustedItemCount();
       int uniqueID;
       Integer key;
@@ -877,7 +879,9 @@ final class MPP14Reader implements MPPVariantReader
                   {
                      uniqueID = MPPUtility.getInt(data, uniqueIdOffset);
                      key = Integer.valueOf(uniqueID);
-                     if (taskMap.containsKey(key) == false)
+
+                     // Accept this task if it does not have a deleted unique ID or it has a deleted unique ID but the name is not null
+                     if (!taskMap.containsKey(key) || taskVarData.getUnicodeString(key, taskNameKey) != null)
                      {
                         taskMap.put(key, Integer.valueOf(loop));
                      }
@@ -1278,7 +1282,7 @@ final class MPP14Reader implements MPPVariantReader
       Var2Data taskVarData = new Var2Data(taskVarMeta, new DocumentInputStream(((DocumentEntry) taskDir.getEntry("Var2Data"))));
       FixedMeta taskFixedMeta = new FixedMeta(new DocumentInputStream(((DocumentEntry) taskDir.getEntry("FixedMeta"))), 47);
       FixedData taskFixedData = new FixedData(taskFixedMeta, new DocumentInputStream(((DocumentEntry) taskDir.getEntry("FixedData"))), fieldMap.getMaxFixedDataSize(0));
-      FixedMeta taskFixed2Meta = new FixedMeta(new DocumentInputStream(((DocumentEntry) taskDir.getEntry("Fixed2Meta"))), taskFixedData, 92, 93);
+      FixedMeta taskFixed2Meta = new FixedMeta(new DocumentInputStream(((DocumentEntry) taskDir.getEntry("Fixed2Meta"))), taskFixedData, 92, 93, 94);
       FixedData taskFixed2Data = new FixedData(taskFixed2Meta, new DocumentInputStream(((DocumentEntry) taskDir.getEntry("Fixed2Data"))));
 
       Props14 props = new Props14(m_inputStreamFactory.getInstance(taskDir, "Props"));
@@ -1295,7 +1299,7 @@ final class MPP14Reader implements MPPVariantReader
       // Process aliases
       new CustomFieldAliasReader(m_file.getCustomFields(), props.getByteArray(TASK_FIELD_NAME_ALIASES)).process();
 
-      TreeMap<Integer, Integer> taskMap = createTaskMap(fieldMap, taskFixedMeta, taskFixedData);
+      TreeMap<Integer, Integer> taskMap = createTaskMap(fieldMap, taskFixedMeta, taskFixedData, taskVarData);
       // The var data may not contain all the tasks as tasks with no var data assigned will
       // not be saved in there. Most notably these are tasks with no name. So use the task map
       // which contains all the tasks.
@@ -1458,10 +1462,10 @@ final class MPP14Reader implements MPPVariantReader
 
          switch (task.getConstraintType())
          {
-         //
-         // Adjust the start and finish dates if the task
-         // is constrained to start as late as possible.
-         //
+            //
+            // Adjust the start and finish dates if the task
+            // is constrained to start as late as possible.
+            //
             case AS_LATE_AS_POSSIBLE:
             {
                if (DateHelper.compare(task.getStart(), task.getLateStart()) < 0)

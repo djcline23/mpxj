@@ -35,6 +35,7 @@ import net.sf.mpxj.DateRange;
 import net.sf.mpxj.MPXJException;
 import net.sf.mpxj.ProjectConfig;
 import net.sf.mpxj.ProjectFile;
+import net.sf.mpxj.ProjectProperties;
 import net.sf.mpxj.Relation;
 import net.sf.mpxj.Task;
 import net.sf.mpxj.listener.ProjectListener;
@@ -88,6 +89,27 @@ public final class MPPReader extends AbstractProjectReader
    }
 
    /**
+    * This method allows us to peek into the OLE compound document to extract the file format.
+    * This allows the UniversalProjectReader to determine if this is an MPP file, or if
+    * it is another type of OLE compound document.
+    *
+    * @param fs POIFSFileSystem instance
+    * @return file format name
+    * @throws IOException
+    */
+   public String getFileFormat(POIFSFileSystem fs) throws IOException
+   {
+      String fileFormat = "";
+      DirectoryEntry root = fs.getRoot();
+      if (root.getEntryNames().contains("\1CompObj"))
+      {
+         CompObj compObj = new CompObj(new DocumentInputStream((DocumentEntry) root.getEntry("\1CompObj")));
+         fileFormat = compObj.getFileFormat();
+      }
+      return fileFormat;
+   }
+
+   /**
     * Alternative entry point allowing an MPP file to be read from
     * a user-supplied POI file stream.
     *
@@ -97,7 +119,6 @@ public final class MPPReader extends AbstractProjectReader
     */
    public ProjectFile read(POIFSFileSystem fs) throws MPXJException
    {
-
       try
       {
          ProjectFile projectFile = new ProjectFile();
@@ -124,8 +145,11 @@ public final class MPPReader extends AbstractProjectReader
          // Retrieve the CompObj data, validate the file format and process
          //
          CompObj compObj = new CompObj(new DocumentInputStream((DocumentEntry) root.getEntry("\1CompObj")));
-         projectFile.getProjectProperties().setFullApplicationName(compObj.getApplicationName());
-         projectFile.getProjectProperties().setApplicationVersion(compObj.getApplicationVersion());
+         ProjectProperties projectProperties = projectFile.getProjectProperties();
+         projectProperties.setFileApplication("Microsoft");
+         projectProperties.setFileType("MPP");
+         projectProperties.setFullApplicationName(compObj.getApplicationName());
+         projectProperties.setApplicationVersion(compObj.getApplicationVersion());
          String format = compObj.getFileFormat();
          Class<? extends MPPVariantReader> readerClass = FILE_CLASS_MAP.get(format);
          if (readerClass == null)

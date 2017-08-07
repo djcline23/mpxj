@@ -1284,7 +1284,7 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
     */
    public ProjectCalendar getResourceCalendar()
    {
-      return (m_calendar);
+      return (ProjectCalendar) getCachedValue(ResourceField.CALENDAR);
    }
 
    /**
@@ -1295,11 +1295,36 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
     */
    public void setResourceCalendar(ProjectCalendar calendar)
    {
-      m_calendar = calendar;
-      if (calendar != null)
+      set(ResourceField.CALENDAR, calendar);
+      if (calendar == null)
+      {
+         setResourceCalendarUniqueID(null);
+      }
+      else
       {
          calendar.setResource(this);
+         setResourceCalendarUniqueID(calendar.getUniqueID());
       }
+   }
+
+   /**
+    * Set the calendar unique ID.
+    *
+    * @param id calendar unique ID
+    */
+   public void setResourceCalendarUniqueID(Integer id)
+   {
+      set(ResourceField.CALENDAR_UNIQUE_ID, id);
+   }
+
+   /**
+    * Retrieve the calendar unique ID.
+    *
+    * @return calendar unique ID
+    */
+   public Integer getResourceCalendarUniqueID()
+   {
+      return (Integer) getCachedValue(ResourceField.CALENDAR_UNIQUE_ID);
    }
 
    /**
@@ -1310,14 +1335,14 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
     */
    public ProjectCalendar addResourceCalendar() throws MPXJException
    {
-      if (m_calendar != null)
+      if (getResourceCalendar() != null)
       {
          throw new MPXJException(MPXJException.MAXIMUM_RECORDS);
       }
 
-      m_calendar = new ProjectCalendar(getParentFile());
-      m_calendar.setResource(this);
-      return (m_calendar);
+      ProjectCalendar calendar = new ProjectCalendar(getParentFile());
+      setResourceCalendar(calendar);
+      return calendar;
    }
 
    /**
@@ -1425,6 +1450,16 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
    }
 
    /**
+    * Sets Parent ID of this resource.
+    *
+    * @param val Parent ID
+    */
+   public void setParentID(Integer val)
+   {
+      set(ResourceField.PARENT_ID, val);
+   }
+
+   /**
     * Retrieves Base Calendar name associated with this resource. This field
     * indicates which calendar is the base calendar for a resource calendar.
     *
@@ -1495,6 +1530,16 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
    @Override public Integer getUniqueID()
    {
       return ((Integer) getCachedValue(ResourceField.UNIQUE_ID));
+   }
+
+   /**
+    * Gets Parent ID field value.
+    *
+    * @return value
+    */
+   public Integer getParentID()
+   {
+      return (Integer) getCachedValue(ResourceField.PARENT_ID);
    }
 
    /**
@@ -2501,11 +2546,6 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
     * Array of field values.
     */
    private Object[] m_array = new Object[ResourceField.MAX_VALUE];
-
-   /**
-    * Resource calendar for this resource.
-    */
-   private ProjectCalendar m_calendar;
 
    /**
     * List of all assignments for this resource.

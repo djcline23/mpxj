@@ -34,8 +34,7 @@ import net.sf.mpxj.ProjectFile;
 import net.sf.mpxj.Resource;
 import net.sf.mpxj.ResourceAssignment;
 import net.sf.mpxj.Task;
-import net.sf.mpxj.reader.ProjectReader;
-import net.sf.mpxj.reader.ProjectReaderUtility;
+import net.sf.mpxj.reader.UniversalProjectReader;
 
 /**
  * Implements the controller component of the ProjectTree MVC.
@@ -65,8 +64,11 @@ public class ProjectTreeController
 
       try
       {
-         ProjectReader reader = ProjectReaderUtility.getProjectReader(file.getName());
-         projectFile = reader.read(file);
+         projectFile = new UniversalProjectReader().read(file);
+         if (projectFile == null)
+         {
+            throw new IllegalArgumentException("Unsupported file type");
+         }
       }
 
       catch (Exception ex)
@@ -213,7 +215,11 @@ public class ProjectTreeController
          {
             @Override public String toString()
             {
-               return a.getResource().getName() + "->" + a.getTask().getName();
+               Resource resource = a.getResource();
+               String resourceName = resource == null ? "(unknown resource)" : resource.getName();
+               Task task = a.getTask();
+               String taskName = task == null ? "(unknown task)" : task.getName();
+               return resourceName + "->" + taskName;
             }
          };
          parentNode.add(childNode);

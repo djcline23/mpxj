@@ -7,6 +7,7 @@
 /lib.net/junit.dll
 /lib.net/mpxj*.dll
 /lib.net/poi*.dll
+/lib.net/commons-collections*.dll
 /lib.net/rtfparserkit*.dll
 /lib.net/sqlite-jdbc*.dll
 /lib.net/MpxjUtilities.dll
@@ -25,5 +26,7 @@
 /src.ruby/mpxj/Gemfile.lock
 /src.ruby/mpxj/.yardoc
 /src.ruby/mpxj/lib/mpxj/*.jar
+/classes/
+/classes.test/
 /classes/
 /classes.test/

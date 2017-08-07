@@ -209,7 +209,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
     *
     * @return new task
     */
-   public Task addTask()
+   @Override public Task addTask()
    {
       ProjectFile parent = getParentFile();
 
@@ -1838,7 +1838,13 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
       if (critical == null)
       {
          Duration totalSlack = getTotalSlack();
-         critical = Boolean.valueOf(totalSlack.getDuration() <= 0 && NumberHelper.getInt(getPercentageComplete()) != 100 && ((getTaskMode() == TaskMode.AUTO_SCHEDULED) || (getDurationText() == null && getStartText() == null && getFinishText() == null)));
+         ProjectProperties props = getParentFile().getProjectProperties();
+         int criticalSlackLimit = NumberHelper.getInt(props.getCriticalSlackLimit());
+         if (criticalSlackLimit != 0 && totalSlack.getDuration() != 0 && totalSlack.getUnits() != TimeUnit.DAYS)
+         {
+            totalSlack = totalSlack.convertUnits(TimeUnit.DAYS, props);
+         }
+         critical = Boolean.valueOf(totalSlack.getDuration() <= criticalSlackLimit && NumberHelper.getInt(getPercentageComplete()) != 100 && ((getTaskMode() == TaskMode.AUTO_SCHEDULED) || (getDurationText() == null && getStartText() == null && getFinishText() == null)));
          set(TaskField.CRITICAL, critical);
       }
       return (BooleanHelper.getBoolean(critical));
@@ -2769,7 +2775,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    /**
     * This method retrieves a flag indicating whether the duration of the
     * task has only been estimated.
-
+   
     * @param estimated Boolean flag
     */
    public void setEstimated(boolean estimated)
@@ -3133,7 +3139,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
     */
    public EarnedValueMethod getEarnedValueMethod()
    {
-      return (m_earnedValueMethod);
+      return (EarnedValueMethod) getCachedValue(TaskField.EARNED_VALUE_METHOD);
    }
 
    /**
@@ -3143,7 +3149,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
     */
    public void setEarnedValueMethod(EarnedValueMethod earnedValueMethod)
    {
-      m_earnedValueMethod = earnedValueMethod;
+      set(TaskField.EARNED_VALUE_METHOD, earnedValueMethod);
    }
 
    /**
@@ -3540,6 +3546,26 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    }
 
    /**
+    * Set the calendar unique ID.
+    *
+    * @param id calendar unique ID
+    */
+   public void setCalendarUniqueID(Integer id)
+   {
+      set(TaskField.CALENDAR_UNIQUE_ID, id);
+   }
+
+   /**
+    * Retrieve the calendar unique ID.
+    *
+    * @return calendar unique ID
+    */
+   public Integer getCalendarUniqueID()
+   {
+      return (Integer) getCachedValue(TaskField.CALENDAR_UNIQUE_ID);
+   }
+
+   /**
     * Sets the name of the base calendar associated with this task.
     * Note that this attribute appears in MPP9 and MSPDI files.
     *
@@ -3548,6 +3574,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    public void setCalendar(ProjectCalendar calendar)
    {
       set(TaskField.CALENDAR, calendar);
+      setCalendarUniqueID(calendar == null ? null : calendar.getUniqueID());
    }
 
    /**
@@ -4152,11 +4179,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
                {
                   double durationValue = (duration.getDuration() * percentComplete) / 100d;
                   duration = Duration.getInstance(durationValue, duration.getUnits());
-                  ProjectCalendar calendar = getCalendar();
-                  if (calendar == null)
-                  {
-                     calendar = getParentFile().getDefaultCalendar();
-                  }
+                  ProjectCalendar calendar = getEffectiveCalendar();
                   value = calendar.getDate(actualStart, duration, true);
                }
                break;
@@ -4474,6 +4497,23 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    public AccrueType getBaselineFixedCostAccrual(int baselineNumber)
    {
       return ((AccrueType) getCachedValue(selectField(TaskFieldLists.BASELINE_FIXED_COST_ACCRUALS, baselineNumber)));
+   }
+
+   /**
+    * Retrieve the effective calendar for this task. If the task does not have
+    * a specific calendar associated with it, fall back to using the default calendar
+    * for the project.
+    *
+    * @return ProjectCalendar instance
+    */
+   public ProjectCalendar getEffectiveCalendar()
+   {
+      ProjectCalendar result = getCalendar();
+      if (result == null)
+      {
+         result = getParentFile().getDefaultCalendar();
+      }
+      return result;
    }
 
    /**
@@ -4970,7 +5010,6 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    private boolean m_resumeValid;
    private String m_externalTaskProject;
    private TimeUnit m_levelingDelayFormat;
-   private EarnedValueMethod m_earnedValueMethod;
    private Duration m_actualWorkProtected;
    private Duration m_actualOvertimeWorkProtected;
    private boolean m_expanded = true;

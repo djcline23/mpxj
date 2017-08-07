@@ -127,6 +127,8 @@ public final class MPXReader extends AbstractProjectReader
          LocaleUtility.setLocale(m_projectFile.getProjectProperties(), m_locale);
          m_delimiter = (char) data[3];
          m_projectFile.getProjectProperties().setMpxDelimiter(m_delimiter);
+         m_projectFile.getProjectProperties().setFileApplication("Microsoft");
+         m_projectFile.getProjectProperties().setFileType("MPX");
          m_taskModel = new TaskModel(m_projectFile, m_locale);
          m_taskModel.setLocale(m_locale);
          m_resourceModel = new ResourceModel(m_projectFile, m_locale);
@@ -146,13 +148,10 @@ public final class MPXReader extends AbstractProjectReader
          Tokenizer tk = new InputStreamTokenizer(bis);
          tk.setDelimiter(m_delimiter);
 
-         Record record;
-         String number;
-
          //
          // Add the header record
          //
-         parseRecord(Integer.toString(MPXConstants.FILE_CREATION_RECORD_NUMBER), new Record(m_locale, tk, m_formats));
+         parseRecord(Integer.valueOf(MPXConstants.FILE_CREATION_RECORD_NUMBER), new Record(m_locale, tk, m_formats));
          ++line;
 
          //
@@ -171,8 +170,8 @@ public final class MPXReader extends AbstractProjectReader
          //
          while (tk.getType() != Tokenizer.TT_EOF)
          {
-            record = new Record(m_locale, tk, m_formats);
-            number = record.getRecordNumber();
+            Record record = new Record(m_locale, tk, m_formats);
+            Integer number = record.getRecordNumber();
 
             if (number != null)
             {
@@ -228,9 +227,9 @@ public final class MPXReader extends AbstractProjectReader
     * @param record record data
     * @throws MPXJException
     */
-   private void parseRecord(String recordNumber, Record record) throws MPXJException
+   private void parseRecord(Integer recordNumber, Record record) throws MPXJException
    {
-      switch (Integer.parseInt(recordNumber))
+      switch (recordNumber.intValue())
       {
          case MPXConstants.PROJECT_NAMES_RECORD_NUMBER:
          case MPXConstants.DDE_OLE_CLIENT_LINKS_RECORD_NUMBER:
@@ -997,8 +996,13 @@ public final class MPXReader extends AbstractProjectReader
          throw new MPXJException(MPXJException.INVALID_FORMAT + " '" + relationship + "'");
       }
 
-      Relation relation = sourceTask.addPredecessor(targetTask, type, lag);
-      m_eventManager.fireRelationReadEvent(relation);
+      // We have seen at least one example MPX file where an invalid task ID
+      // is present. We'll ignore this as the schedule is otherwise valid.
+      if (targetTask != null)
+      {
+         Relation relation = sourceTask.addPredecessor(targetTask, type, lag);
+         m_eventManager.fireRelationReadEvent(relation);
+      }
    }
 
    /**
