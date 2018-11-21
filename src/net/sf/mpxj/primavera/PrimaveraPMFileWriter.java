@@ -65,6 +65,7 @@ import net.sf.mpxj.Relation;
 import net.sf.mpxj.RelationType;
 import net.sf.mpxj.Resource;
 import net.sf.mpxj.ResourceAssignment;
+import net.sf.mpxj.ResourceRate;
 import net.sf.mpxj.Task;
 import net.sf.mpxj.TaskField;
 import net.sf.mpxj.TimeUnit;
@@ -82,6 +83,7 @@ import net.sf.mpxj.primavera.schema.ObjectFactory;
 import net.sf.mpxj.primavera.schema.ProjectType;
 import net.sf.mpxj.primavera.schema.RelationshipType;
 import net.sf.mpxj.primavera.schema.ResourceAssignmentType;
+import net.sf.mpxj.primavera.schema.ResourceRateType;
 import net.sf.mpxj.primavera.schema.ResourceType;
 import net.sf.mpxj.primavera.schema.UDFAssignmentType;
 import net.sf.mpxj.primavera.schema.UDFTypeType;
@@ -93,7 +95,7 @@ import net.sf.mpxj.writer.AbstractProjectWriter;
  * This class creates a new MSPDI file from the contents of an ProjectFile
  * instance.
  */
-public final class PrimaveraPMFileWriter extends AbstractProjectWriter
+public class PrimaveraPMFileWriter extends AbstractProjectWriter
 {
    /**
     * Set the task field which will be used to populate the Activity ID attribute
@@ -124,6 +126,13 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
     * {@inheritDoc}
     */
    @Override public void write(ProjectFile projectFile, OutputStream stream) throws IOException
+   {
+      ArrayList<ProjectFile> lst = new ArrayList<ProjectFile>(1);
+      lst.add(projectFile);
+      writeAll(lst, stream);
+   }
+
+   public void writeAll(List<ProjectFile> projectFiles, OutputStream stream) throws IOException
    {
       try
       {
@@ -160,7 +169,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
             // support it, swallow any errors raised trying to configure it.
          }
 
-         m_projectFile = projectFile;
+         m_projectFile = projectFiles.get(0);
          m_calendar = Calendar.getInstance();
 
          Marshaller marshaller = CONTEXT.createMarshaller();
@@ -172,11 +181,15 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
 
          writeCurrency();
          writeUserFieldDefinitions();
-         writeProjectProperties();
          writeCalendars();
          writeResources();
-         writeTasks();
-         writeAssignments();
+         for (ProjectFile pf : projectFiles)
+         {
+            m_projectFile = pf;
+            writeProjectProperties();
+            writeTasks();
+            writeAssignments();
+         }
 
          DatatypeConverter.setParentFile(m_projectFile);
 
@@ -301,7 +314,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
    /**
     * Add UDFType objects to a PM XML file.
     *
-    * @author kmahan
+    * @author kmahan 
     * @date 2014-09-24
     * @author lsong
     * @date 2015-7-24
@@ -372,7 +385,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
       m_project.setLinkPercentCompleteWithActual(Boolean.TRUE);
       m_project.setLinkPlannedAndAtCompletionFlag(Boolean.TRUE);
       m_project.setName(mpxj.getName() == null ? PROJECT_ID : mpxj.getName());
-      m_project.setObjectId(PROJECT_OBJECT_ID);
+      m_project.setObjectId(Integer.parseInt(mpxj.getUniqueID()));
       m_project.setPlannedStartDate(mpxj.getStartDate());
       m_project.setPrimaryResourcesCanMarkActivitiesAsCompleted(Boolean.TRUE);
       m_project.setResetPlannedToRemainingFlag(Boolean.FALSE);
@@ -393,7 +406,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
    }
 
    /**
-    * This method writes calendar data to a PM XML file.
+    * This method writes calendar data to a PM XML file. 
     */
    private void writeCalendars()
    {
@@ -460,7 +473,6 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
                   xmlException.getWorkTime().add(xmlHours);
 
                   xmlHours.setStart(range.getStart());
-
                   if (range.getEnd() != null)
                   {
                      xmlHours.setFinish(getEndTime(range.getEnd()));
@@ -473,7 +485,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
    }
 
    /**
-    * This method writes resource data to a PM XML file.
+    * This method writes resource data to a PM XML file. 
     */
    private void writeResources()
    {
@@ -512,11 +524,39 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
       xml.setResourceNotes(mpxj.getNotes());
       xml.setResourceType(getResourceType(mpxj));
       xml.getUDF().addAll(writeUDFType(FieldTypeClass.RESOURCE, mpxj));
+
+      // write resource rates
+      for (ResourceRate rate : mpxj.getResourceRates())
+      {
+         writeResourceRate(rate, mpxj);
+      }
+
+      writeDomainSpecificResourceProperties(mpxj, xml);
+   }
+
+   /**
+    * Write a resource rate
+    * @param mpxj ResourceRate instance
+    * @param rsrc Resource instance that the resource rate is tied to
+    */
+   private void writeResourceRate(ResourceRate mpxj, Resource rsrc)
+   {
+      ResourceRateType xml = m_factory.createResourceRateType();
+      m_apibo.getResourceRate().add(xml);
+
+      xml.setEffectiveDate(mpxj.getEffectiveDate());
+      xml.setMaxUnitsPerTime(Double.valueOf(mpxj.getMaxUnitsPerTime()));
+      xml.setResourceObjectId(rsrc.getUniqueID());
+   }
+
+   @SuppressWarnings("unused") protected void writeDomainSpecificResourceProperties(Resource mpxj, ResourceType xml)
+   {
+      // None by default
    }
 
    /**
     * This method writes task data to a PM XML file.
-    *
+    * 
     */
    private void writeTasks()
    {
@@ -584,7 +624,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
 
          xml.setObjectId(mpxj.getUniqueID());
          xml.setParentObjectId(parentObjectID);
-         xml.setProjectObjectId(PROJECT_OBJECT_ID);
+         xml.setProjectObjectId(Integer.parseInt(mpxj.getParentFile().getProjectProperties().getUniqueID()));
          xml.setSequenceNumber(Integer.valueOf(m_wbsSequence++));
 
          xml.setStatus("Active");
@@ -624,7 +664,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
       xml.setPlannedDuration(getDuration(mpxj.getDuration()));
       xml.setPlannedFinishDate(mpxj.getFinish());
       xml.setPlannedStartDate(mpxj.getStart());
-      xml.setProjectObjectId(PROJECT_OBJECT_ID);
+      xml.setProjectObjectId(Integer.parseInt(mpxj.getParentFile().getProjectProperties().getUniqueID()));
       xml.setRemainingDuration(getDuration(mpxj.getRemainingDuration()));
       xml.setRemainingEarlyFinishDate(mpxj.getEarlyFinish());
       xml.setRemainingEarlyStartDate(mpxj.getResume());
@@ -642,7 +682,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
    }
 
    /**
-    * Writes assignment data to a PM XML file.
+    * Writes assignment data to a PM XML file. 
     */
    private void writeAssignments()
    {
@@ -690,7 +730,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
       xml.setPlannedStartDate(mpxj.getStart());
       xml.setPlannedUnits(getDuration(mpxj.getWork()));
       xml.setPlannedUnitsPerTime(getPercentage(mpxj.getUnits()));
-      xml.setProjectObjectId(PROJECT_OBJECT_ID);
+      xml.setProjectObjectId(Integer.parseInt(mpxj.getParentFile().getProjectProperties().getUniqueID()));
       xml.setRateSource("Resource");
       xml.setRemainingCost(getDouble(mpxj.getActualCost()));
       xml.setRemainingDuration(getDuration(mpxj.getRemainingWork()));
@@ -706,7 +746,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
 
    /**
     * Writes task predecessor links to a PM XML file.
-    *
+    * 
     * @param task MPXJ Task instance
     */
    private void writePredecessors(Task task)
@@ -721,8 +761,8 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
          xml.setObjectId(Integer.valueOf(++m_relationshipObjectID));
          xml.setPredecessorActivityObjectId(mpxj.getTargetTask().getUniqueID());
          xml.setSuccessorActivityObjectId(mpxj.getSourceTask().getUniqueID());
-         xml.setPredecessorProjectObjectId(PROJECT_OBJECT_ID);
-         xml.setSuccessorProjectObjectId(PROJECT_OBJECT_ID);
+         xml.setPredecessorProjectObjectId(Integer.parseInt(mpxj.getTargetTask().getParentFile().getProjectProperties().getUniqueID()));
+         xml.setSuccessorProjectObjectId(Integer.parseInt(mpxj.getSourceTask().getParentFile().getProjectProperties().getUniqueID()));
          xml.setType(RELATION_TYPE_MAP.get(mpxj.getType()));
       }
    }
@@ -754,8 +794,8 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
    }
 
    /**
-    * Retrieve a duration in the form required by Primavera.
-    *
+    * Retrieve a duration in the form required by Primavera. 
+    * 
     * @param duration Duration instance
     * @return formatted duration
     */
@@ -775,12 +815,13 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
 
          result = Double.valueOf(duration.getDuration());
       }
+
       return result;
    }
 
    /**
     * Formats a day name.
-    *
+    * 
     * @param day MPXJ Day instance
     * @return Primavera day instance
     */
@@ -868,7 +909,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
     * The end of a Primavera time range finishes on the last minute
     * of the period, so a range of 12:00 -> 13:00 is represented by
     * Primavera as 12:00 -> 12:59.
-    *
+    * 
     * @param date MPXJ end time
     * @return Primavera end time
     */
@@ -879,7 +920,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
 
    /**
     * Retrieve a calendar unique ID.
-    *
+    * 
     * @param calendar ProjectCalendar instance
     * @return calendar unique ID
     */
@@ -978,24 +1019,24 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
    }
 
    private static final String NILLABLE_STYLESHEET = "<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><xsl:output method=\"xml\" indent=\"yes\"/><xsl:template match=\"node()[not(@xsi:nil = 'true')]|@*\"><xsl:copy><xsl:apply-templates select=\"node()|@*\"/></xsl:copy></xsl:template></xsl:stylesheet>";
-   private static final Integer PROJECT_OBJECT_ID = Integer.valueOf(1);
    private static final String PROJECT_ID = "PROJECT";
    private static final String RESOURCE_ID_PREFIX = "RESOURCE-";
    private static final String DEFAULT_WBS_CODE = "WBS";
    private static final Integer DEFAULT_CURRENCY_ID = Integer.valueOf(1);
 
    private static final String[] DAY_NAMES =
-   {
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday"
-   };
+         {
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday"
+         };
 
    private static final Map<RelationType, String> RELATION_TYPE_MAP = new HashMap<RelationType, String>();
+
    static
    {
       RELATION_TYPE_MAP.put(RelationType.FINISH_START, "Finish to Start");
@@ -1005,6 +1046,7 @@ public final class PrimaveraPMFileWriter extends AbstractProjectWriter
    }
 
    private static final Map<ConstraintType, String> CONSTRAINT_TYPE_MAP = new HashMap<ConstraintType, String>();
+
    static
    {
       CONSTRAINT_TYPE_MAP.put(ConstraintType.START_NO_LATER_THAN, "Start On or Before");

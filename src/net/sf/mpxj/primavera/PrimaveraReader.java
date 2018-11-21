@@ -27,6 +27,7 @@ import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
@@ -37,6 +38,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 
 import net.sf.mpxj.AssignmentField;
 import net.sf.mpxj.Availability;
@@ -368,6 +370,31 @@ final class PrimaveraReader
             int daysFrom1970 = daysFrom1900 - 25568;
             // 25568 -> Number of days from 1900 to 1970.
             Date startEx = new Date(daysFrom1970 * 24l * 60l * 60l * 1000);
+
+            // exceptions come in as UTC time zone
+            // need to convert to local time zone to avoid shifting
+            // grab the year/month/day... representation of the exception
+            Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+            cal.setTime(startEx);
+            int year = cal.get(Calendar.YEAR);
+            int month = cal.get(Calendar.MONTH);
+            int day = cal.get(Calendar.DAY_OF_MONTH);
+            int hour = cal.get(Calendar.HOUR_OF_DAY);
+            int minute = cal.get(Calendar.MINUTE);
+            int second = cal.get(Calendar.SECOND);
+            int millis = cal.get(Calendar.MILLISECOND);
+
+            // change the time zone and restore the fields
+            cal.setTimeZone(TimeZone.getDefault());
+            cal.set(Calendar.YEAR, year);
+            cal.set(Calendar.MONTH, month);
+            cal.set(Calendar.DAY_OF_MONTH, day);
+            cal.set(Calendar.HOUR_OF_DAY, hour);
+            cal.set(Calendar.MINUTE, minute);
+            cal.set(Calendar.SECOND, second);
+            cal.set(Calendar.MILLISECOND, millis);
+            startEx = cal.getTime();
+
             calendar.addCalendarException(startEx, startEx);
          }
       }
@@ -569,6 +596,7 @@ final class PrimaveraReader
          Task task = m_project.addTask();
          task.setProject(m_project.getProjectProperties().getName()); // P6 task always belongs to project
          processFields(m_wbsFields, row, task);
+         task.setIsWBS(true);
          uniqueIDs.add(task.getUniqueID());
          m_eventManager.fireTaskReadEvent(task);
       }
@@ -888,7 +916,7 @@ final class PrimaveraReader
          }
          return result;
       }
-   */
+    */
 
    /**
     * Populates a field based on baseline and actual values.
@@ -1714,6 +1742,7 @@ final class PrimaveraReader
    private final boolean m_matchPrimaveraWBS;
 
    private static final Map<String, ResourceType> RESOURCE_TYPE_MAP = new HashMap<String, ResourceType>();
+
    static
    {
       RESOURCE_TYPE_MAP.put(null, ResourceType.WORK);
@@ -1723,6 +1752,7 @@ final class PrimaveraReader
    }
 
    private static final Map<String, ConstraintType> CONSTRAINT_TYPE_MAP = new HashMap<String, ConstraintType>();
+
    static
    {
       CONSTRAINT_TYPE_MAP.put("CS_MSO", ConstraintType.MUST_START_ON);
@@ -1737,6 +1767,7 @@ final class PrimaveraReader
    }
 
    private static final Map<String, Priority> PRIORITY_MAP = new HashMap<String, Priority>();
+
    static
    {
       PRIORITY_MAP.put("PT_Top", Priority.getInstance(Priority.HIGHEST));
@@ -1747,6 +1778,7 @@ final class PrimaveraReader
    }
 
    private static final Map<String, RelationType> RELATION_TYPE_MAP = new HashMap<String, RelationType>();
+
    static
    {
       RELATION_TYPE_MAP.put("PR_FS", RelationType.FINISH_START);
@@ -1756,6 +1788,7 @@ final class PrimaveraReader
    }
 
    private static final Map<String, TaskType> TASK_TYPE_MAP = new HashMap<String, TaskType>();
+
    static
    {
       TASK_TYPE_MAP.put("DT_FixedDrtn", TaskType.FIXED_DURATION);
@@ -1765,6 +1798,7 @@ final class PrimaveraReader
    }
 
    private static final Map<String, Boolean> MILESTONE_MAP = new HashMap<String, Boolean>();
+
    static
    {
       MILESTONE_MAP.put("TT_Task", Boolean.FALSE);
@@ -1787,6 +1821,7 @@ final class PrimaveraReader
    }
 
    private static final Map<String, CurrencySymbolPosition> CURRENCY_SYMBOL_POSITION_MAP = new HashMap<String, CurrencySymbolPosition>();
+
    static
    {
       CURRENCY_SYMBOL_POSITION_MAP.put("#1.1", CurrencySymbolPosition.BEFORE);

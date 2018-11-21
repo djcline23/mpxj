@@ -1001,7 +1001,7 @@ public final class ProjectCalendar extends ProjectCalendarWeek implements Projec
    {
       ProjectFile parent = getParentFile();
 
-      if (m_uniqueID != null)
+      if (m_uniqueID != null && equals(parent.getCalendars().getByUniqueID(m_uniqueID))) // Added second condition in the case that there's a calendar with unique id of 0; because ProjectCalendars start with m_uniqueID = 0, any calendar created after the ID 0 calendar unmapped that calendar because this method unmapped 0.
       {
          parent.getCalendars().unmapUniqueID(m_uniqueID);
       }
@@ -1772,10 +1772,10 @@ public final class ProjectCalendar extends ProjectCalendarWeek implements Projec
       System.arraycopy(cal.getDays(), 0, getDays(), 0, getDays().length);
       for (ProjectCalendarException ex : cal.m_exceptions)
       {
-         addCalendarException(ex.getFromDate(), ex.getToDate());
+         ProjectCalendarException copyEx = addCalendarException(ex.getFromDate(), ex.getToDate());
          for (DateRange range : ex)
          {
-            ex.addRange(new DateRange(range.getStart(), range.getEnd()));
+            copyEx.addRange(new DateRange(range.getStart(), range.getEnd()));
          }
       }
 

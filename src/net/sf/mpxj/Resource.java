@@ -24,6 +24,7 @@
 
 package net.sf.mpxj;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
@@ -1963,6 +1964,26 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
    }
 
    /**
+    * Add a resource rate to the resource
+    * 
+    * @param rate - the rate to be added to this resource
+    */
+   public void addResourceRate(ResourceRate rate)
+   {
+      m_resourceRates.add(rate);
+   }
+
+   /**
+    * Retrieve the list of resource rates for this resource
+    * 
+    * @return the list of resource rates for this resource
+    */
+   public List<ResourceRate> getResourceRates()
+   {
+      return (m_resourceRates);
+   }
+
+   /**
     * Where a resource in an MPP file represents a resource from a subproject,
     * this value will be non-zero. The value itself is the unique ID value shown
     * in the parent project. To retrieve the value of the resource unique ID in
@@ -2565,6 +2586,7 @@ public final class Resource extends ProjectEntity implements Comparable<Resource
    private CostRateTable[] m_costRateTables = new CostRateTable[5];
    private AvailabilityTable m_availability = new AvailabilityTable();
    private List<FieldListener> m_listeners;
+   private List<ResourceRate> m_resourceRates = new ArrayList<ResourceRate>();
 }
 
 /*

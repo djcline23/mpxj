@@ -24,6 +24,7 @@
 package net.sf.mpxj.primavera;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
@@ -70,6 +71,7 @@ import net.sf.mpxj.Relation;
 import net.sf.mpxj.RelationType;
 import net.sf.mpxj.Resource;
 import net.sf.mpxj.ResourceAssignment;
+import net.sf.mpxj.ResourceRate;
 import net.sf.mpxj.Task;
 import net.sf.mpxj.TaskField;
 import net.sf.mpxj.TimeUnit;
@@ -91,6 +93,7 @@ import net.sf.mpxj.primavera.schema.GlobalPreferencesType;
 import net.sf.mpxj.primavera.schema.ProjectType;
 import net.sf.mpxj.primavera.schema.RelationshipType;
 import net.sf.mpxj.primavera.schema.ResourceAssignmentType;
+import net.sf.mpxj.primavera.schema.ResourceRateType;
 import net.sf.mpxj.primavera.schema.ResourceType;
 import net.sf.mpxj.primavera.schema.UDFAssignmentType;
 import net.sf.mpxj.primavera.schema.UDFTypeType;
@@ -122,29 +125,96 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
    {
       try
       {
+         APIBusinessObjects apibo = unmarshall(stream);
+
+         List<ProjectType> projects = apibo.getProject();
+         boolean processed = false;
+         for (ProjectType currentProject : projects)
+         {
+            if (!BooleanHelper.getBoolean(currentProject.isExternal()))
+            {
+               processProject(apibo, currentProject);
+               processed = true;
+
+               break;
+            }
+         }
+
+         if (!processed)
+         {
+            throw new MPXJException("Unable to locate any non-external projects in a list of " + projects.size() + " projects");
+         }
+
+         //
+         // Ensure that the unique ID counters are correct
+         //
+         m_projectFile.getProjectConfig().updateUniqueCounters();
+
+         return (m_projectFile);
+      }
+
+      finally
+      {
+         m_projectFile = null;
+         m_clashMap.clear();
+         m_calMap.clear();
+      }
+   }
+
+   public List<ProjectFile> readAll(InputStream stream) throws MPXJException
+   {
+      try
+      {
+         APIBusinessObjects apibo = unmarshall(stream);
+
+         List<ProjectType> projects = apibo.getProject();
+         List<ProjectFile> projectOut = new ArrayList<ProjectFile>();
+         for (ProjectType currentProject : projects)
+         {
+            if (!BooleanHelper.getBoolean(currentProject.isExternal()))
+            {
+               processProject(apibo, currentProject);
+               projectOut.add(m_projectFile);
+
+               //
+               // Ensure that the unique ID counters are correct
+               //
+               m_projectFile.getProjectConfig().updateUniqueCounters();
+            }
+         }
+
+         for (ProjectType currentProject : projects)
+         {
+            if (!BooleanHelper.getBoolean(currentProject.isExternal()))
+            {
+               processPredecessors(currentProject, projectOut);
+            }
+         }
+
+         if (projectOut.isEmpty())
+         {
+            throw new MPXJException("Unable to locate any non-external projects in a list of " + projects.size() + " projects");
+         }
+
+         return projectOut;
+      }
+      finally
+      {
+         m_projectFile = null;
+         m_clashMap.clear();
+         m_calMap.clear();
+      }
+   }
+
+   private APIBusinessObjects unmarshall(InputStream stream) throws MPXJException
+   {
+      try
+      {
          //
          // This is a hack to ensure that the incoming file has a namespace
          // which JAXB will accept.
          //
          InputStream namespaceCorrectedStream = new ReplaceOnceStream(stream, NAMESPACE_REGEX, NAMESPACE_REPLACEMENT, NAMESPACE_SCOPE, CharsetHelper.UTF8);
-
-         m_projectFile = new ProjectFile();
-         m_eventManager = m_projectFile.getEventManager();
-
-         ProjectConfig config = m_projectFile.getProjectConfig();
-         config.setAutoTaskUniqueID(false);
-         config.setAutoResourceUniqueID(false);
-         config.setAutoCalendarUniqueID(false);
-         config.setAutoAssignmentUniqueID(false);
-
-         m_projectFile.getProjectProperties().setFileApplication("Primavera");
-         m_projectFile.getProjectProperties().setFileType("PMXML");
-
-         CustomFieldContainer fields = m_projectFile.getCustomFields();
-         fields.getCustomField(TaskField.TEXT1).setAlias("WBS Code");
-         fields.getCustomField(TaskField.TEXT2).setAlias("Task ID");
-
-         m_eventManager.addProjectListeners(m_projectListeners);
 
          SAXParserFactory factory = SAXParserFactory.newInstance();
          factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -160,40 +230,8 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
 
          Unmarshaller unmarshaller = CONTEXT.createUnmarshaller();
 
-         APIBusinessObjects apibo = (APIBusinessObjects) unmarshaller.unmarshal(doc);
-
-         List<ProjectType> projects = apibo.getProject();
-         ProjectType project = null;
-         for (ProjectType currentProject : projects)
-         {
-            if (!BooleanHelper.getBoolean(currentProject.isExternal()))
-            {
-               project = currentProject;
-               break;
-            }
-         }
-
-         if (project == null)
-         {
-            throw new MPXJException("Unable to locate any non-external projects in a list of " + projects.size() + " projects");
-         }
-
-         processProjectUDFs(apibo);
-         processProjectProperties(apibo, project);
-         processCalendars(apibo);
-         processResources(apibo);
-         processTasks(project);
-         processPredecessors(project);
-         processAssignments(project);
-
-         //
-         // Ensure that the unique ID counters are correct
-         //
-         config.updateUniqueCounters();
-
-         return (m_projectFile);
+         return (APIBusinessObjects) unmarshaller.unmarshal(doc);
       }
-
       catch (ParserConfigurationException ex)
       {
          throw new MPXJException("Failed to parse file", ex);
@@ -208,13 +246,31 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
       {
          throw new MPXJException("Failed to parse file", ex);
       }
+   }
 
-      finally
-      {
-         m_projectFile = null;
-         m_clashMap.clear();
-         m_calMap.clear();
-      }
+   private void processProject(APIBusinessObjects apibo, ProjectType currentProject)
+   {
+      m_projectFile = new ProjectFile();
+      m_eventManager = m_projectFile.getEventManager();
+
+      ProjectConfig config = m_projectFile.getProjectConfig();
+      config.setAutoTaskUniqueID(false);
+      config.setAutoResourceUniqueID(false);
+      config.setAutoCalendarUniqueID(false);
+      config.setAutoAssignmentUniqueID(false);
+
+      CustomFieldContainer fields = m_projectFile.getCustomFields();
+      fields.getCustomField(TaskField.TEXT1).setAlias("WBS Code");
+      fields.getCustomField(TaskField.TEXT2).setAlias("Task ID");
+
+      m_eventManager.addProjectListeners(m_projectListeners);
+
+      processProjectUDFs(apibo);
+      processProjectProperties(apibo, currentProject);
+      processCalendars(apibo);
+      processResources(apibo);
+      processTasks(currentProject);
+      processAssignments(currentProject);
    }
 
    /**
@@ -250,6 +306,7 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
       properties.setStartDate(project.getPlannedStartDate());
       properties.setStatusDate(project.getDataDate());
       properties.setProjectTitle(project.getId());
+      properties.setUniqueID(project.getObjectId().toString());
 
       List<GlobalPreferencesType> list = apibo.getGlobalPreferences();
       if (!list.isEmpty())
@@ -288,6 +345,7 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
          m_calMap.put(id, calendar);
          calendar.setName(row.getName());
          calendar.setUniqueID(id);
+         calendar.setParent(m_calMap.get(row.getBaseCalendarObjectId()));
 
          StandardWorkWeek stdWorkWeek = row.getStandardWorkWeek();
          if (stdWorkWeek != null)
@@ -345,6 +403,7 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
     */
    private void processResources(APIBusinessObjects apibo)
    {
+      List<ResourceRateType> resourceRates = apibo.getResourceRate();
       List<ResourceType> resources = apibo.getResource();
       for (ResourceType xml : resources)
       {
@@ -359,6 +418,14 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
          resource.setType(RESOURCE_TYPE_MAP.get(xml.getResourceType()));
          resource.setMaxUnits(reversePercentage(xml.getMaxUnitsPerTime()));
          resource.setParentID(xml.getParentObjectId());
+
+         for (ResourceRateType resourceRate : resourceRates)
+         {
+            if (resourceRate.getResourceObjectId().equals(xml.getObjectId()))
+            {
+               resource.addResourceRate(new ResourceRate(resourceRate.getEffectiveDate(), resourceRate.getMaxUnitsPerTime().doubleValue()));
+            }
+         }
 
          Integer calendarID = xml.getCalendarObjectId();
          if (calendarID != null)
@@ -440,6 +507,7 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
          task.setStart(row.getAnticipatedStartDate());
          task.setFinish(row.getAnticipatedFinishDate());
          task.setText(1, row.getCode());
+         task.setIsWBS(true); // XXX added by kwm 2015-09-14
       }
 
       //
@@ -774,19 +842,45 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
     *
     * @param project xml container
     */
-   private void processPredecessors(ProjectType project)
+   private void processPredecessors(ProjectType project, List<ProjectFile> allProjects)
    {
       for (RelationshipType row : project.getRelationship())
       {
 
-         Task currentTask = m_projectFile.getTaskByUniqueID(mapTaskID(row.getSuccessorActivityObjectId()));
-         Task predecessorTask = m_projectFile.getTaskByUniqueID(mapTaskID(row.getPredecessorActivityObjectId()));
-         if (currentTask != null && predecessorTask != null)
+         Task currentTask = null;
+         ProjectFile currentProject = null;
+         Task predecessorTask = null;
+         ProjectFile predecessorProject = null;
+
+         for (ProjectFile pFile : allProjects)
+         {
+            if (Integer.valueOf(pFile.getProjectProperties().getUniqueID()).equals(row.getSuccessorProjectObjectId()))
+            {
+               currentTask = pFile.getTaskByUniqueID(mapTaskID(row.getSuccessorActivityObjectId()));
+               currentProject = pFile;
+            }
+            if (Integer.valueOf(pFile.getProjectProperties().getUniqueID()).equals(row.getPredecessorProjectObjectId()))
+            {
+               predecessorTask = pFile.getTaskByUniqueID(mapTaskID(row.getPredecessorActivityObjectId()));
+               predecessorProject = pFile;
+            }
+            if (currentTask != null && predecessorTask != null)
+            {
+               // found tasks
+               break;
+            }
+         }
+
+         if (currentTask != null && predecessorTask != null && currentProject != null && predecessorProject != null)
          {
             RelationType type = RELATION_TYPE_MAP.get(row.getType());
             Duration lag = getDuration(row.getLag());
             Relation relation = currentTask.addPredecessor(predecessorTask, type, lag);
-            m_eventManager.fireRelationReadEvent(relation);
+            currentProject.getEventManager().fireRelationReadEvent(relation);
+            if (!predecessorProject.equals(currentProject))
+            {
+               predecessorProject.getEventManager().fireRelationReadEvent(relation);
+            }
          }
       }
    }
@@ -819,6 +913,10 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
             assignment.setBaselineStart(row.getPlannedStartDate());
             assignment.setBaselineFinish(row.getPlannedFinishDate());
             assignment.setGUID(DatatypeConverter.parseUUID(row.getGUID()));
+
+            // before, units were never being set beyond default value
+            // so resource requirements were all default values -SLX 2/2/16
+            assignment.setUnits(Double.valueOf(row.getRemainingUnitsPerTime().doubleValue() * 100.0));
 
             task.setActualCost(Double.valueOf(NumberHelper.getDouble(task.getActualCost()) + NumberHelper.getDouble(assignment.getActualCost())));
             task.setRemainingCost(Double.valueOf(NumberHelper.getDouble(task.getRemainingCost()) + NumberHelper.getDouble(assignment.getRemainingCost())));
@@ -858,8 +956,8 @@ public final class PrimaveraPMFileReader extends AbstractProjectReader
     * The end of a Primavera time range finishes on the last minute
     * of the period, so a range of 12:00 -> 13:00 is represented by
     * Primavera as 12:00 -> 12:59.
-    *
-    * @param date Primavera end time
+    * 
+    * @param Primavera end time
     * @return date MPXJ end time
     */
    private Date getEndTime(Date date)
