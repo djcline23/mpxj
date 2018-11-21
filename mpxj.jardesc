@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="WINDOWS-1252" standalone="no"?>
+<jardesc>
+    <jar path="FrontEnd/libs/mpxj.jar"/>
+    <options buildIfNeeded="true" compress="true" descriptionLocation="/mpxj/mpxj.jardesc" exportErrors="true" exportWarnings="true" includeDirectoryEntries="false" overwrite="false" saveDescription="true" storeRefactorings="false" useSourceFolders="false"/>
+    <storedRefactorings deprecationInfo="true" structuralOnly="false"/>
+    <selectedProjects/>
+    <manifest generateManifest="true" manifestLocation="" manifestVersion="1.0" reuseManifest="false" saveManifest="false" usesManifest="true">
+        <sealing sealJar="false">
+            <packagesToSeal/>
+            <packagesToUnSeal/>
+        </sealing>
+    </manifest>
+    <selectedElements exportClassFiles="true" exportJavaFiles="false" exportOutputFolder="false">
+        <file path="/mpxj/jgoodies/jgoodies-binding-2.10.0.jar"/>
+        <folder path="/mpxj/jaxb"/>
+        <folder path="/mpxj/lib"/>
+        <javaElement handleIdentifier="=mpxj/src"/>
+        <javaElement handleIdentifier="=mpxj/src.test"/>
+        <file path="/mpxj/jgoodies/jgoodies-common-1.8.0.jar"/>
+        <folder path="/mpxj/junit/data"/>
+        <folder path="/mpxj/lib.net"/>
+    </selectedElements>
+</jardesc>
