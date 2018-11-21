@@ -41,6 +41,24 @@ import net.sf.mpxj.listener.FieldListener;
  */
 public final class Task extends ProjectEntity implements Comparable<Task>, ProjectEntityWithID, FieldContainer, ChildTaskContainer
 {
+   //Hack for Aurora use
+   //-djc 2015-07-09
+   private boolean isWBS = false;
+
+   /**
+    * Different from getWSB. Added for Aurora use.
+    * @return True iff this Task is a WSB element.
+    */
+   public boolean isWBS()
+   {
+      return isWBS;
+   }
+
+   public void setIsWBS(boolean isWBS)
+   {
+      this.isWBS = isWBS;
+   }
+
    /**
     * Default constructor.
     *
