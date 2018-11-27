@@ -31,6 +31,11 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.poi.poifs.filesystem.DirectoryEntry;
+import org.apache.poi.poifs.filesystem.DocumentEntry;
+import org.apache.poi.poifs.filesystem.DocumentInputStream;
+import org.apache.poi.poifs.filesystem.POIFSFileSystem;
+
 import net.sf.mpxj.DateRange;
 import net.sf.mpxj.MPXJException;
 import net.sf.mpxj.ProjectConfig;
@@ -40,11 +45,6 @@ import net.sf.mpxj.Relation;
 import net.sf.mpxj.Task;
 import net.sf.mpxj.listener.ProjectListener;
 import net.sf.mpxj.reader.AbstractProjectReader;
-
-import org.apache.poi.poifs.filesystem.DirectoryEntry;
-import org.apache.poi.poifs.filesystem.DocumentEntry;
-import org.apache.poi.poifs.filesystem.DocumentInputStream;
-import org.apache.poi.poifs.filesystem.POIFSFileSystem;
 
 /**
  * This class creates a new ProjectFile instance by reading an MPP file.
@@ -97,7 +97,7 @@ public final class MPPReader extends AbstractProjectReader
     * @return file format name
     * @throws IOException
     */
-   public String getFileFormat(POIFSFileSystem fs) throws IOException
+   public static String getFileFormat(POIFSFileSystem fs) throws IOException
    {
       String fileFormat = "";
       DirectoryEntry root = fs.getRoot();
@@ -146,8 +146,6 @@ public final class MPPReader extends AbstractProjectReader
          //
          CompObj compObj = new CompObj(new DocumentInputStream((DocumentEntry) root.getEntry("\1CompObj")));
          ProjectProperties projectProperties = projectFile.getProjectProperties();
-         projectProperties.setFileApplication("Microsoft");
-         projectProperties.setFileType("MPP");
          projectProperties.setFullApplicationName(compObj.getApplicationName());
          projectProperties.setApplicationVersion(compObj.getApplicationVersion());
          String format = compObj.getFileFormat();
@@ -172,7 +170,7 @@ public final class MPPReader extends AbstractProjectReader
          // Perform post-processing to set the summary flag and clean
          // up any instances where a task has an empty splits list.
          //
-         for (Task task : projectFile.getAllTasks())
+         for (Task task : projectFile.getTasks())
          {
             task.setSummary(task.getChildTasks().size() != 0);
             List<DateRange> splits = task.getSplits();
@@ -187,6 +185,20 @@ public final class MPPReader extends AbstractProjectReader
          // Ensure that the unique ID counters are correct
          //
          config.updateUniqueCounters();
+
+         //
+         // Add some analytics
+         //
+         String projectFilePath = projectFile.getProjectProperties().getProjectFilePath();
+         if (projectFilePath != null && projectFilePath.startsWith("<>\\"))
+         {
+            projectProperties.setFileApplication("Microsoft Project Server");
+         }
+         else
+         {
+            projectProperties.setFileApplication("Microsoft");
+         }
+         projectProperties.setFileType("MPP");
 
          return (projectFile);
       }
@@ -356,29 +368,6 @@ public final class MPPReader extends AbstractProjectReader
    }
 
    /**
-    * Set the write password for this Project file. Currently not used.
-    *
-    * Note: Set this each time before calling the read method.
-    *
-    * @param password password text
-    */
-   public void setWritePassword(String password)
-   {
-      m_writePassword = password;
-   }
-
-   /**
-    * Internal only. Get the write password for this Project file.
-    * Currently not used.
-    *
-    * @return password
-    */
-   public String getWritePassword()
-   {
-      return m_writePassword;
-   }
-
-   /**
     * Flag used to indicate whether RTF formatting in notes should
     * be preserved. The default value for this flag is false.
     */
@@ -397,7 +386,6 @@ public final class MPPReader extends AbstractProjectReader
    private boolean m_readPropertiesOnly;
 
    private String m_readPassword;
-   private String m_writePassword;
    private List<ProjectListener> m_projectListeners;
 
    /**

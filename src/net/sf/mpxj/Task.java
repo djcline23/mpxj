@@ -235,7 +235,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
 
       m_children.add(task);
 
-      parent.getAllTasks().add(task);
+      parent.getTasks().add(task);
 
       setSummary(true);
 
@@ -368,6 +368,26 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    }
 
    /**
+    * Retrieve the activity codes associated with this task.
+    *
+    * @return list of activity codes
+    */
+   public List<ActivityCodeValue> getActivityCodes()
+   {
+      return m_activityCodes;
+   }
+
+   /**
+    * Assign an activity code to this task.
+    *
+    * @param value activity coe value
+    */
+   public void addActivityCode(ActivityCodeValue value)
+   {
+      m_activityCodes.add(value);
+   }
+
+   /**
     * This method allows a resource assignment to be added to the
     * current task.
     *
@@ -382,7 +402,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
       {
          assignment = new ResourceAssignment(getParentFile(), this);
          m_assignments.add(assignment);
-         getParentFile().getAllResourceAssignments().add(assignment);
+         getParentFile().getResourceAssignments().add(assignment);
 
          assignment.setTaskUniqueID(getUniqueID());
          assignment.setWork(getDuration());
@@ -408,7 +428,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
       if (getExistingResourceAssignment(assignment.getResource()) == null)
       {
          m_assignments.add(assignment);
-         getParentFile().getAllResourceAssignments().add(assignment);
+         getParentFile().getResourceAssignments().add(assignment);
 
          Resource resource = assignment.getResource();
          if (resource != null)
@@ -960,6 +980,16 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    }
 
    /**
+   * The date the resource is scheduled to finish the remaining work for the activity.
+   *
+   * @param date Date value
+   */
+   public void setRemainingEarlyFinish(Date date)
+   {
+      set(TaskField.REMAINING_EARLY_FINISH, date);
+   }
+
+   /**
     * The Early Start field contains the earliest date that a task could
     * possibly begin, based on the early start dates of predecessor and
     * successor tasks, and other constraints.
@@ -969,6 +999,16 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    public void setEarlyStart(Date date)
    {
       set(TaskField.EARLY_START, date);
+   }
+
+   /**
+   * The date the resource is scheduled to begin the remaining work for the activity.
+   *
+   * @param date Date value
+   */
+   public void setRemainingEarlyStart(Date date)
+   {
+      set(TaskField.REMAINING_EARLY_START, date);
    }
 
    /**
@@ -1055,10 +1095,10 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
 
       if (previous != null)
       {
-         parent.getAllTasks().unmapID(previous);
+         parent.getTasks().unmapID(previous);
       }
 
-      parent.getAllTasks().mapID(val, this);
+      parent.getTasks().mapID(val, this);
 
       set(TaskField.ID, val);
    }
@@ -1982,6 +2022,16 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    }
 
    /**
+   * The date the resource is scheduled to finish the remaining work for the activity.
+   *
+   * @return Date
+   */
+   public Date getRemainingEarlyFinish()
+   {
+      return ((Date) getCachedValue(TaskField.REMAINING_EARLY_FINISH));
+   }
+
+   /**
     * The Early Start field contains the earliest date that a task could
     * possibly begin, based on the early start dates of predecessor and
     * successor tasks, and other constraints.
@@ -1991,6 +2041,16 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    public Date getEarlyStart()
    {
       return ((Date) getCachedValue(TaskField.EARLY_START));
+   }
+
+   /**
+   * The date the resource is scheduled to start the remaining work for the activity.
+   *
+   * @return Date
+   */
+   public Date getRemainingEarlyStart()
+   {
+      return ((Date) getCachedValue(TaskField.REMAINING_EARLY_START));
    }
 
    /**
@@ -2793,7 +2853,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
    /**
     * This method retrieves a flag indicating whether the duration of the
     * task has only been estimated.
-   
+
     * @param estimated Boolean flag
     */
    public void setEstimated(boolean estimated)
@@ -3654,7 +3714,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
          Duration duration = getDuration();
          if (duration != null)
          {
-            startSlack = DateHelper.getVariance(this, getLateStart(), getEarlyStart(), duration.getUnits());
+            startSlack = DateHelper.getVariance(this, getEarlyStart(), getLateStart(), duration.getUnits());
             set(TaskField.START_SLACK, startSlack);
          }
       }
@@ -3674,7 +3734,7 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
          Duration duration = getDuration();
          if (duration != null)
          {
-            finishSlack = DateHelper.getVariance(this, getLateFinish(), getEarlyFinish(), duration.getUnits());
+            finishSlack = DateHelper.getVariance(this, getEarlyFinish(), getLateFinish(), duration.getUnits());
             set(TaskField.FINISH_SLACK, finishSlack);
          }
       }
@@ -4779,9 +4839,9 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
             ProjectFile parent = getParentFile();
             if (oldValue != null)
             {
-               parent.getAllTasks().unmapUniqueID((Integer) oldValue);
+               parent.getTasks().unmapUniqueID((Integer) oldValue);
             }
-            parent.getAllTasks().mapUniqueID((Integer) newValue, this);
+            parent.getTasks().mapUniqueID((Integer) newValue, this);
             break;
          }
 
@@ -5016,6 +5076,11 @@ public final class Task extends ProjectEntity implements Comparable<Task>, Proje
     * List of resource assignments for this task.
     */
    private List<ResourceAssignment> m_assignments = new LinkedList<ResourceAssignment>();
+
+   /**
+    * List of activity codes for this task.
+    */
+   private List<ActivityCodeValue> m_activityCodes = new LinkedList<ActivityCodeValue>();
 
    /**
     * Recurring task details associated with this task.

@@ -23,10 +23,16 @@
 
 package net.sf.mpxj.junit;
 
+import org.junit.runner.RunWith;
+import org.junit.runners.Suite;
+
 import net.sf.mpxj.junit.assignment.AssignmentAssignmentsTest;
+import net.sf.mpxj.junit.assignment.AssignmentFlagsTest;
+import net.sf.mpxj.junit.assignment.AssignmentTextTest;
 import net.sf.mpxj.junit.assignment.DeletedAssignmentTest;
 import net.sf.mpxj.junit.calendar.CalendarCalendarsTest;
 import net.sf.mpxj.junit.calendar.InvalidCalendarTest;
+import net.sf.mpxj.junit.calendar.RecurringExceptionsTest;
 import net.sf.mpxj.junit.legacy.BasicTest;
 import net.sf.mpxj.junit.primavera.PrimaveraDatabaseReaderTest;
 import net.sf.mpxj.junit.project.DefaultDurationFormatTest;
@@ -39,6 +45,7 @@ import net.sf.mpxj.junit.resource.ResourceFlagsTest;
 import net.sf.mpxj.junit.resource.ResourceMiscTest;
 import net.sf.mpxj.junit.resource.ResourceNumbersTest;
 import net.sf.mpxj.junit.resource.ResourceTextTest;
+import net.sf.mpxj.junit.resource.ResourceTypeTest;
 import net.sf.mpxj.junit.task.TaskBaselinesTest;
 import net.sf.mpxj.junit.task.TaskCostsTest;
 import net.sf.mpxj.junit.task.TaskDatesTest;
@@ -53,9 +60,6 @@ import net.sf.mpxj.junit.task.TaskPercentCompleteTest;
 import net.sf.mpxj.junit.task.TaskStartsTest;
 import net.sf.mpxj.junit.task.TaskTextTest;
 import net.sf.mpxj.junit.task.TaskTextValuesTest;
-
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
 
 /**
  * Test suite to collect together MPXJ tests.
@@ -132,10 +136,15 @@ import org.junit.runners.Suite;
    TaskContainerTest.class,
    AvailabilityTableTest.class,
    AssignmentAssignmentsTest.class,
+   AssignmentFlagsTest.class,
+   AssignmentTextTest.class,
    ResourceMiscTest.class,
    ResourceFlagsTest.class,
    ResourceNumbersTest.class,
+   ResourceTypeTest.class,
    ResourceTextTest.class,
+   RecurringExceptionsTest.class,
+   RecurringDataTest.class,
    CustomerDataTest.class
 }) public class MpxjTestSuite
 {

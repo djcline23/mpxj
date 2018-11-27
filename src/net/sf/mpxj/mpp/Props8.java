@@ -30,6 +30,9 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Map;
 
+import net.sf.mpxj.common.ByteArrayHelper;
+import net.sf.mpxj.common.StreamHelper;
+
 /**
  * This class represents the Props files found in Microsoft Project MPP8 files.
  * These files appear to be collections of properties, indexed by an integer
@@ -101,14 +104,14 @@ final class Props8 extends Props
             }
 
             m_map.put(Integer.valueOf(attrib2), data);
-            //pw.println(attrib2 + ": " + MPPUtility.hexdump(data, true));
+            //pw.println(attrib2 + ": " + ByteArrayHelper.hexdump(data, true));
 
             //
             // Align to two byte boundary
             //
             if (data.length % 2 != 0)
             {
-               is.skip(1);
+               StreamHelper.skip(is, 1);
             }
          }
 
@@ -133,7 +136,7 @@ final class Props8 extends Props
          // larger items of data, but with no apparent clue
          // as to when they will appear.
          //
-         //         System.out.println (MPPUtility.hexdump(buffer, true));
+         //         System.out.println (ByteArrayHelper.hexdump(buffer, true));
 
          //pw.flush();
          //pw.close();
@@ -168,7 +171,7 @@ final class Props8 extends Props
 
       for (Map.Entry<Integer, byte[]> entry : m_map.entrySet())
       {
-         pw.println("   Key: " + entry.getKey() + " Value: " + MPPUtility.hexdump(entry.getValue(), true));
+         pw.println("   Key: " + entry.getKey() + " Value: " + ByteArrayHelper.hexdump(entry.getValue(), true));
       }
 
       pw.println("END Props");

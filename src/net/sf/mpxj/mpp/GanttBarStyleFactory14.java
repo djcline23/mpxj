@@ -38,7 +38,7 @@ public class GanttBarStyleFactory14 implements GanttBarStyleFactory
    {
       GanttBarStyle[] barStyles = null;
       byte[] barStyleData = props.getByteArray(DEFAULT_PROPERTIES);
-      if (barStyleData != null)
+      if (barStyleData != null && barStyleData.length > 2240)
       {
          int barStyleCount = MPPUtility.getByte(barStyleData, 2243);
          if (barStyleCount > 0 && barStyleCount < 65535)
@@ -95,7 +95,7 @@ public class GanttBarStyleFactory14 implements GanttBarStyleFactory
       byte[] barData = props.getByteArray(EXCEPTION_PROPERTIES);
       if (barData != null)
       {
-         //System.out.println(MPPUtility.hexdump(barData, false, 71, ""));
+         //System.out.println(ByteArrayHelper.hexdump(barData, false, 71, ""));
 
          barStyle = new GanttBarStyleException[barData.length / 71];
          int offset = 0;

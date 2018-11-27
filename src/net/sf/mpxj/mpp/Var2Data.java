@@ -31,6 +31,9 @@ import java.util.Date;
 import java.util.Map;
 import java.util.TreeMap;
 
+import net.sf.mpxj.common.ByteArrayHelper;
+import net.sf.mpxj.common.StreamHelper;
+
 /**
  * This class represents a block of variable data. Each block of
  * data is represented by a 4 byte size, followed by the data itself.
@@ -66,19 +69,39 @@ final class Var2Data extends MPPComponent
          if (currentOffset > itemOffset)
          {
             is.reset();
-            is.skip(itemOffset);
+            StreamHelper.skip(is, itemOffset);
          }
          else
          {
             if (currentOffset < itemOffset)
             {
-               is.skip(itemOffset - currentOffset);
+               StreamHelper.skip(is, itemOffset - currentOffset);
             }
          }
 
          int size = readInt(is);
 
-         data = readByteArray(is, size);
+         //
+         // Try our best to handle corrupt files gracefully
+         //
+         if (size < 0 || size > is.available())
+         {
+            continue;
+         }
+
+         try
+         {
+            data = readByteArray(is, size);
+         }
+
+         catch (IndexOutOfBoundsException ex)
+         {
+            // POI fails to read certain MPP files with this exception:
+            // https://bz.apache.org/bugzilla/show_bug.cgi?id=61677
+            // There is no fix presently, we just have to bail out at
+            // this point - we're unable to read any more data.
+            break;
+         }
 
          m_map.put(Integer.valueOf(itemOffset), data);
          currentOffset = itemOffset + 4 + size;
@@ -400,7 +423,7 @@ final class Var2Data extends MPPComponent
       for (Map.Entry<Integer, byte[]> entry : m_map.entrySet())
       {
          pw.println("   Data at offset: " + entry.getKey() + " size: " + entry.getValue().length);
-         pw.println(MPPUtility.hexdump(entry.getValue(), true, 16, "   "));
+         pw.println(ByteArrayHelper.hexdump(entry.getValue(), true, 16, "   "));
       }
 
       pw.println("END Var2Data");
@@ -427,7 +450,7 @@ final class Var2Data extends MPPComponent
          Integer offset = m_meta.getOffset(id, type);
          byte[] data = m_map.get(offset);
          pw.println("   Data at offset: " + offset + " size: " + data.length);
-         pw.println(MPPUtility.hexdump(data, true, 16, "   "));
+         pw.println(ByteArrayHelper.hexdump(data, true, 16, "   "));
       }
       pw.println("END Var2Data for " + id);
       pw.println();

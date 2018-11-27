@@ -27,6 +27,8 @@ package net.sf.mpxj.mpp;
 import java.io.IOException;
 import java.io.InputStream;
 
+import net.sf.mpxj.common.StreamHelper;
+
 /**
  * This class represents the Props files found in Microsoft Project MPP9 files.
  */
@@ -68,7 +70,7 @@ final class Props9 extends Props
          availableBytes -= itemSize;
 
          m_map.put(Integer.valueOf(itemKey), data);
-         //pw.println(foundCount + " "+ attrib2 + ": " + MPPUtility.hexdump(data, true));
+         //pw.println(foundCount + " "+ attrib2 + ": " + ByteArrayHelper.hexdump(data, true));
          ++foundCount;
 
          //
@@ -76,7 +78,7 @@ final class Props9 extends Props
          //
          if (data.length % 2 != 0)
          {
-            is.skip(1);
+            StreamHelper.skip(is, 1);
          }
       }
 

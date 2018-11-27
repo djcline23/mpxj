@@ -34,16 +34,16 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TimeZone;
 
+import net.sf.mpxj.ActivityCode;
+import net.sf.mpxj.ActivityCodeContainer;
+import net.sf.mpxj.ActivityCodeValue;
 import net.sf.mpxj.AssignmentField;
 import net.sf.mpxj.Availability;
 import net.sf.mpxj.AvailabilityTable;
-import net.sf.mpxj.ChildTaskContainer;
 import net.sf.mpxj.ConstraintType;
 import net.sf.mpxj.CostRateTable;
 import net.sf.mpxj.CostRateTableEntry;
@@ -60,6 +60,8 @@ import net.sf.mpxj.FieldType;
 import net.sf.mpxj.FieldTypeClass;
 import net.sf.mpxj.Priority;
 import net.sf.mpxj.ProjectCalendar;
+import net.sf.mpxj.ProjectCalendarDateRanges;
+import net.sf.mpxj.ProjectCalendarException;
 import net.sf.mpxj.ProjectCalendarHours;
 import net.sf.mpxj.ProjectConfig;
 import net.sf.mpxj.ProjectFile;
@@ -151,8 +153,9 @@ final class PrimaveraReader
     * Process project properties.
     *
     * @param rows project properties data.
+    * @param projectID project ID
     */
-   public void processProjectProperties(List<Row> rows)
+   public void processProjectProperties(List<Row> rows, Integer projectID)
    {
       if (rows.isEmpty() == false)
       {
@@ -162,25 +165,105 @@ final class PrimaveraReader
          properties.setFinishDate(row.getDate("plan_end_date"));
          properties.setName(row.getString("proj_short_name"));
          properties.setStartDate(row.getDate("plan_start_date")); // data_date?
-         properties.setProjectTitle(row.getString("proj_short_name"));
          properties.setDefaultTaskType(TASK_TYPE_MAP.get(row.getString("def_duration_type")));
          properties.setStatusDate(row.getDate("last_recalc_date"));
          properties.setFiscalYearStartMonth(row.getInteger("fy_start_month_num"));
+         properties.setUniqueID(projectID == null ? null : projectID.toString());
+         properties.setExportFlag(row.getBoolean("export_flag"));
          // cannot assign actual calendar yet as it has not been read yet
          m_defaultCalendarID = row.getInteger("clndr_id");
       }
    }
 
    /**
+    * Read activity code types and values.
+    *
+    * @param types activity code type data
+    * @param typeValues activity code value data
+    * @param assignments activity code task assignments
+    */
+   public void processActivityCodes(List<Row> types, List<Row> typeValues, List<Row> assignments)
+   {
+      ActivityCodeContainer container = m_project.getActivityCodes();
+      Map<Integer, ActivityCode> map = new HashMap<Integer, ActivityCode>();
+
+      for (Row row : types)
+      {
+         ActivityCode code = new ActivityCode(row.getInteger("actv_code_type_id"), row.getString("actv_code_type"));
+         container.add(code);
+         map.put(code.getUniqueID(), code);
+      }
+
+      for (Row row : typeValues)
+      {
+         ActivityCode code = map.get(row.getInteger("actv_code_type_id"));
+         if (code != null)
+         {
+            ActivityCodeValue value = code.addValue(row.getInteger("actv_code_id"), row.getString("short_name"), row.getString("actv_code_name"));
+            m_activityCodeMap.put(value.getUniqueID(), value);
+         }
+      }
+
+      for (Row row : assignments)
+      {
+         Integer taskID = row.getInteger("task_id");
+         List<Integer> list = m_activityCodeAssignments.get(taskID);
+         if (list == null)
+         {
+            list = new ArrayList<Integer>();
+            m_activityCodeAssignments.put(taskID, list);
+         }
+         list.add(row.getInteger("actv_code_id"));
+      }
+   }
+
+   /**
     * Process User Defined Fields (UDF).
     *
-    * @param userDefinedFields UDFs rows
+    * @param fields field definitions
+    * @param values field values
     */
-   public void processUserDefinedFields(List<Row> userDefinedFields)
+   public void processUserDefinedFields(List<Row> fields, List<Row> values)
    {
-      for (Row row : userDefinedFields)
+      // Process fields
+      Map<Integer, String> tableNameMap = new HashMap<Integer, String>();
+      for (Row row : fields)
       {
-         parseUDF(row);
+         Integer fieldId = row.getInteger("udf_type_id");
+         String tableName = row.getString("table_name");
+         tableNameMap.put(fieldId, tableName);
+
+         FieldTypeClass fieldType = FIELD_TYPE_MAP.get(tableName);
+         if (fieldType != null)
+         {
+            String fieldDataType = row.getString("logical_data_type");
+            String fieldName = row.getString("udf_type_label");
+
+            m_udfFields.put(fieldId, fieldName);
+            addUserDefinedField(fieldType, UserFieldDataType.valueOf(fieldDataType), fieldName);
+         }
+      }
+
+      // Process values
+      for (Row row : values)
+      {
+         Integer typeID = row.getInteger("udf_type_id");
+         String tableName = tableNameMap.get(typeID);
+         Map<Integer, List<Row>> tableData = m_udfValues.get(tableName);
+         if (tableData == null)
+         {
+            tableData = new HashMap<Integer, List<Row>>();
+            m_udfValues.put(tableName, tableData);
+         }
+
+         Integer id = row.getInteger("fk_id");
+         List<Row> list = tableData.get(id);
+         if (list == null)
+         {
+            list = new ArrayList<Row>();
+            tableData.put(id, list);
+         }
+         list.add(row);
       }
    }
 
@@ -314,40 +397,51 @@ final class PrimaveraReader
          ProjectCalendarHours hours = calendar.addCalendarHours(day);
          for (Record recWorkingHours : recHours)
          {
-            if (recWorkingHours.getValue() != null)
+            addHours(hours, recWorkingHours);
+         }
+      }
+   }
+
+   /**
+    * Parses a record containing hours and add them to a container.
+    *
+    * @param ranges hours container
+    * @param hoursRecord hours record
+    */
+   private void addHours(ProjectCalendarDateRanges ranges, Record hoursRecord)
+   {
+      if (hoursRecord.getValue() != null)
+      {
+         String[] wh = hoursRecord.getValue().split("\\|");
+         try
+         {
+            String startText;
+            String endText;
+
+            if (wh[0].equals("s"))
             {
-               String[] wh = recWorkingHours.getValue().split("\\|");
-               try
-               {
-                  String startText;
-                  String endText;
-
-                  if (wh[0].equals("s"))
-                  {
-                     startText = wh[1];
-                     endText = wh[3];
-                  }
-                  else
-                  {
-                     startText = wh[3];
-                     endText = wh[1];
-                  }
-
-                  // for end time treat midnight as midnight next day
-                  if (endText.equals("00:00"))
-                  {
-                     endText = "24:00";
-                  }
-                  Date start = m_calendarTimeFormat.parse(startText);
-                  Date end = m_calendarTimeFormat.parse(endText);
-
-                  hours.addRange(new DateRange(start, end));
-               }
-               catch (ParseException e)
-               {
-                  // silently ignore date parse exceptions
-               }
+               startText = wh[1];
+               endText = wh[3];
             }
+            else
+            {
+               startText = wh[3];
+               endText = wh[1];
+            }
+
+            // for end time treat midnight as midnight next day
+            if (endText.equals("00:00"))
+            {
+               endText = "24:00";
+            }
+            Date start = m_calendarTimeFormat.parse(startText);
+            Date end = m_calendarTimeFormat.parse(endText);
+
+            ranges.addRange(new DateRange(start, end));
+         }
+         catch (ParseException e)
+         {
+            // silently ignore date parse exceptions
          }
       }
    }
@@ -366,36 +460,14 @@ final class PrimaveraReader
       {
          for (Record exception : exceptions.getChildren())
          {
-            int daysFrom1900 = Integer.parseInt(exception.getValue().split("\\|")[1]);
-            int daysFrom1970 = daysFrom1900 - 25568;
-            // 25568 -> Number of days from 1900 to 1970.
-            Date startEx = new Date(daysFrom1970 * 24l * 60l * 60l * 1000);
+            long daysFromEpoch = Integer.parseInt(exception.getValue().split("\\|")[1]);
+            Date startEx = DateHelper.getDateFromLong(EXCEPTION_EPOCH + (daysFromEpoch * DateHelper.MS_PER_DAY));
 
-            // exceptions come in as UTC time zone
-            // need to convert to local time zone to avoid shifting
-            // grab the year/month/day... representation of the exception
-            Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-            cal.setTime(startEx);
-            int year = cal.get(Calendar.YEAR);
-            int month = cal.get(Calendar.MONTH);
-            int day = cal.get(Calendar.DAY_OF_MONTH);
-            int hour = cal.get(Calendar.HOUR_OF_DAY);
-            int minute = cal.get(Calendar.MINUTE);
-            int second = cal.get(Calendar.SECOND);
-            int millis = cal.get(Calendar.MILLISECOND);
-
-            // change the time zone and restore the fields
-            cal.setTimeZone(TimeZone.getDefault());
-            cal.set(Calendar.YEAR, year);
-            cal.set(Calendar.MONTH, month);
-            cal.set(Calendar.DAY_OF_MONTH, day);
-            cal.set(Calendar.HOUR_OF_DAY, hour);
-            cal.set(Calendar.MINUTE, minute);
-            cal.set(Calendar.SECOND, second);
-            cal.set(Calendar.MILLISECOND, millis);
-            startEx = cal.getTime();
-
-            calendar.addCalendarException(startEx, startEx);
+            ProjectCalendarException pce = calendar.addCalendarException(startEx, startEx);
+            for (Record exceptionHours : exception.getChildren())
+            {
+               addHours(pce, exceptionHours);
+            }
          }
       }
    }
@@ -406,17 +478,6 @@ final class PrimaveraReader
     * @param rows resource data
     */
    public void processResources(List<Row> rows)
-   {
-      processResources(rows, null);
-   }
-
-   /**
-    * Process resources.
-    *
-    * @param rows resource data
-    * @param udfVals User Defined Fields values data
-    */
-   public void processResources(List<Row> rows, List<Row> udfVals)
    {
       for (Row row : rows)
       {
@@ -431,12 +492,7 @@ final class PrimaveraReader
          resource.setOvertimeRateUnits(timeUnit);
 
          // Add User Defined Fields
-         Integer uniqueID = resource.getUniqueID();
-         List<Row> udf = getContainerUDF(uniqueID, udfVals);
-         for (Row r : udf)
-         {
-            addUDFValue(FieldTypeClass.RESOURCE, resource, r);
-         }
+         populateUserDefinedFieldValues("RSRC", FieldTypeClass.RESOURCE, resource, resource.getUniqueID());
 
          m_eventManager.fireResourceReadEvent(resource);
       }
@@ -573,19 +629,23 @@ final class PrimaveraReader
     */
    public void processTasks(List<Row> wbs, List<Row> tasks)
    {
-      processTasks(wbs, tasks, null);
-   }
-
-   /**
-    * Process tasks.
-    *
-    * @param wbs WBS task data
-    * @param tasks task data
-    * @param udfVals User Defined Fields values data
-    */
-   public void processTasks(List<Row> wbs, List<Row> tasks, List<Row> udfVals)
-   {
+      ProjectProperties projectProperties = m_project.getProjectProperties();
+      String projectName = projectProperties.getName();
       Set<Integer> uniqueIDs = new HashSet<Integer>();
+      Set<Task> wbsTasks = new HashSet<Task>();
+
+      //
+      // We set the project name when we read the project properties, but that's just
+      // the short name. The full project name lives on the first WBS item. Rather than
+      // querying twice, we'll just set it here where we have access to the WBS items.
+      // I haven't changed what's in the project name attribute as that's the value
+      // MPXJ users are used to receiving in that attribute, so we'll use the title
+      // attribute instead.
+      //
+      if (!wbs.isEmpty())
+      {
+         projectProperties.setProjectTitle(wbs.get(0).getString("wbs_name"));
+      }
 
       //
       // Read WBS entries and create tasks.
@@ -594,10 +654,12 @@ final class PrimaveraReader
       for (Row row : wbs)
       {
          Task task = m_project.addTask();
-         task.setProject(m_project.getProjectProperties().getName()); // P6 task always belongs to project
+         task.setProject(projectName); // P6 task always belongs to project
          processFields(m_wbsFields, row, task);
-         task.setIsWBS(true);
+         populateUserDefinedFieldValues("PROJWBS", FieldTypeClass.TASK, task, task.getUniqueID());
          uniqueIDs.add(task.getUniqueID());
+		 task.setIsWBS(true);
+         wbsTasks.add(task);
          m_eventManager.fireTaskReadEvent(task);
       }
 
@@ -644,7 +706,7 @@ final class PrimaveraReader
          {
             task = parentTask.addTask();
          }
-         task.setProject(m_project.getProjectProperties().getName()); // P6 task always belongs to project
+         task.setProject(projectName); // P6 task always belongs to project
 
          processFields(m_taskFields, row, task);
 
@@ -661,6 +723,12 @@ final class PrimaveraReader
          }
 
          Integer uniqueID = task.getUniqueID();
+
+         // Add User Defined Fields - before we handle ID clashes
+         populateUserDefinedFieldValues("TASK", FieldTypeClass.TASK, task, uniqueID);
+
+         populateActivityCodes(task);
+
          if (uniqueIDs.contains(uniqueID))
          {
             while (uniqueIDs.contains(Integer.valueOf(nextID)))
@@ -683,23 +751,38 @@ final class PrimaveraReader
          Date endDate = row.getDate("act_end_date") == null ? row.getDate("reend_date") : row.getDate("act_end_date");
          task.setFinish(endDate);
 
-         Duration work = Duration.add(task.getActualWork(), task.getRemainingWork(), m_project.getProjectProperties());
+         Duration work = Duration.add(task.getActualWork(), task.getRemainingWork(), projectProperties);
          task.setWork(work);
-
-         // Add User Defined Fields
-         List<Row> udf = getContainerUDF(uniqueID, udfVals);
-         for (Row r : udf)
-         {
-            addUDFValue(FieldTypeClass.TASK, task, r);
-         }
 
          m_eventManager.fireTaskReadEvent(task);
       }
 
-      sortActivities(activityIDField, m_project);
+      new ActivitySorter(TaskField.TEXT1, wbsTasks).sort(m_project);
+
       updateStructure();
       updateDates();
       updateWork();
+   }
+
+   /**
+    * Read details of any activity codes assigned to this task.
+    *
+    * @param task parent task
+    */
+   private void populateActivityCodes(Task task)
+   {
+      List<Integer> list = m_activityCodeAssignments.get(task.getUniqueID());
+      if (list != null)
+      {
+         for (Integer id : list)
+         {
+            ActivityCodeValue value = m_activityCodeMap.get(id);
+            if (value != null)
+            {
+               task.addActivityCode(value);
+            }
+         }
+      }
    }
 
    /**
@@ -789,25 +872,6 @@ final class PrimaveraReader
    }
 
    /**
-    * Parse a user defined field for a task.
-    *
-    * @param row UDF data
-    */
-   private void parseUDF(Row row)
-   {
-      FieldTypeClass fieldType = FIELD_TYPE_MAP.get(row.getString("table_name"));
-      if (fieldType != null)
-      {
-         Integer fieldId = Integer.valueOf(row.getString("udf_type_id"));
-         String fieldDataType = row.getString("logical_data_type");
-         String fieldName = row.getString("udf_type_label");
-
-         m_udfMap.put(fieldId, fieldName);
-         addUserDefinedField(fieldType, UserFieldDataType.valueOf(fieldDataType), fieldName);
-      }
-   }
-
-   /**
     * Adds a user defined field value to a task.
     *
     * @param fieldType field type
@@ -816,10 +880,10 @@ final class PrimaveraReader
     */
    private void addUDFValue(FieldTypeClass fieldType, FieldContainer container, Row row)
    {
-      Integer fieldId = Integer.valueOf(row.getString("udf_type_id"));
-      String fieldName = m_udfMap.get(fieldId);
-      Object value = null;
+      Integer fieldId = row.getInteger("udf_type_id");
+      String fieldName = m_udfFields.get(fieldId);
 
+      Object value = null;
       FieldType field = m_project.getCustomFields().getFieldByAlias(fieldType, fieldName);
       if (field != null)
       {
@@ -878,28 +942,27 @@ final class PrimaveraReader
    }
 
    /**
-    * Retrieve the user defined values for a given container.
+    * Populate the UDF values for this entity.
     *
-    * @param id target container ID
-    * @param udfs user defined fields
-    * @return user defined fields for the target container
+    * @param tableName parent table name
+    * @param type entity type
+    * @param container entity
+    * @param uniqueID entity Unique ID
     */
-   private List<Row> getContainerUDF(Integer id, List<Row> udfs)
+   private void populateUserDefinedFieldValues(String tableName, FieldTypeClass type, FieldContainer container, Integer uniqueID)
    {
-      List<Row> udf = new LinkedList<Row>();
-
-      if (udfs != null)
+      Map<Integer, List<Row>> tableData = m_udfValues.get(tableName);
+      if (tableData != null)
       {
-         for (Row row : udfs)
+         List<Row> udf = tableData.get(uniqueID);
+         if (udf != null)
          {
-            if (id.equals(row.getInteger("fk_id")))
+            for (Row r : udf)
             {
-               udf.add(row);
+               addUDFValue(type, container, r);
             }
          }
       }
-
-      return udf;
    }
 
    /*
@@ -934,61 +997,6 @@ final class PrimaveraReader
          value = container.getCachedValue(baseline);
       }
       container.set(target, value);
-   }
-
-   /**
-    * Ensure activities are sorted into Activity ID order to match Primavera.
-    *
-    * @param activityIDField field containing the Activity ID value
-    * @param container object containing the tasks to process
-    */
-   private void sortActivities(final FieldType activityIDField, ChildTaskContainer container)
-   {
-      // Do we have any tasks?
-      List<Task> tasks = container.getChildTasks();
-      if (!tasks.isEmpty())
-      {
-         for (Task task : tasks)
-         {
-            //
-            // Sort child activities
-            //
-            sortActivities(activityIDField, task);
-
-            //
-            // Sort Order:
-            // 1. Activities come first
-            // 2. WBS come last
-            // 3. Activities ordered by activity ID
-            // 4. WBS ordered by ID
-            //
-            Collections.sort(tasks, new Comparator<Task>()
-            {
-               @Override public int compare(Task t1, Task t2)
-               {
-                  boolean t1HasChildren = !t1.getChildTasks().isEmpty();
-                  boolean t2HasChildren = !t2.getChildTasks().isEmpty();
-
-                  // Both are WBS
-                  if (t1HasChildren && t2HasChildren)
-                  {
-                     return t1.getID().compareTo(t2.getID());
-                  }
-
-                  // Both are activities
-                  if (!t1HasChildren && !t2HasChildren)
-                  {
-                     String activityID1 = (String) t1.getCurrentValue(activityIDField);
-                     String activityID2 = (String) t2.getCurrentValue(activityIDField);
-                     return activityID1.compareTo(activityID2);
-                  }
-
-                  // One activity one WBS
-                  return t1HasChildren ? 1 : -1;
-               }
-            });
-         }
-      }
    }
 
    /**
@@ -1058,6 +1066,8 @@ final class PrimaveraReader
          Date actualFinishDate = parentTask.getActualFinish();
          Date earlyStartDate = parentTask.getEarlyStart();
          Date earlyFinishDate = parentTask.getEarlyFinish();
+         Date remainingEarlyStartDate = parentTask.getRemainingEarlyStart();
+         Date remainingEarlyFinishDate = parentTask.getRemainingEarlyFinish();
          Date lateStartDate = parentTask.getLateStart();
          Date lateFinishDate = parentTask.getLateFinish();
          Date baselineStartDate = parentTask.getBaselineStart();
@@ -1076,6 +1086,8 @@ final class PrimaveraReader
             actualFinishDate = DateHelper.max(actualFinishDate, task.getActualFinish());
             earlyStartDate = DateHelper.min(earlyStartDate, task.getEarlyStart());
             earlyFinishDate = DateHelper.max(earlyFinishDate, task.getEarlyFinish());
+            remainingEarlyStartDate = DateHelper.min(remainingEarlyStartDate, task.getRemainingEarlyStart());
+            remainingEarlyFinishDate = DateHelper.max(remainingEarlyFinishDate, task.getRemainingEarlyFinish());
             lateStartDate = DateHelper.min(lateStartDate, task.getLateStart());
             lateFinishDate = DateHelper.max(lateFinishDate, task.getLateFinish());
             baselineStartDate = DateHelper.min(baselineStartDate, task.getBaselineStart());
@@ -1092,6 +1104,8 @@ final class PrimaveraReader
          parentTask.setActualStart(actualStartDate);
          parentTask.setEarlyStart(earlyStartDate);
          parentTask.setEarlyFinish(earlyFinishDate);
+         parentTask.setRemainingEarlyStart(remainingEarlyStartDate);
+         parentTask.setRemainingEarlyFinish(remainingEarlyFinishDate);
          parentTask.setLateStart(lateStartDate);
          parentTask.setLateFinish(lateFinishDate);
          parentTask.setBaselineStart(baselineStartDate);
@@ -1210,15 +1224,19 @@ final class PrimaveraReader
          Duration lag = row.getDuration("lag_hr_cnt");
          if (currentTask != null)
          {
+            Integer uniqueID = row.getInteger("task_pred_id");
             if (predecessorTask != null)
             {
                Relation relation = currentTask.addPredecessor(predecessorTask, type, lag);
+               relation.setUniqueID(uniqueID);
                m_eventManager.fireRelationReadEvent(relation);
             }
             else
             {
                // if we can't find the predecessor, it must lie outside the project
-               m_externalPredecessors.add(new ExternalPredecessorRelation(predecessorID, currentTask, type, lag));
+               ExternalPredecessorRelation relation = new ExternalPredecessorRelation(predecessorID, currentTask, type, lag);
+               m_externalPredecessors.add(relation);
+               relation.setUniqueID(uniqueID);
             }
          }
       }
@@ -1230,17 +1248,6 @@ final class PrimaveraReader
     * @param rows assignment data
     */
    public void processAssignments(List<Row> rows)
-   {
-      processAssignments(rows, null);
-   }
-
-   /**
-    * Process assignment data.
-    *
-    * @param rows assignment data
-    * @param udfVals User Defined Fields values data
-    */
-   public void processAssignments(List<Row> rows, List<Row> udfVals)
    {
       for (Row row : rows)
       {
@@ -1284,12 +1291,7 @@ final class PrimaveraReader
             assignment.setUnits(NumberHelper.getDouble(units));
 
             // Add User Defined Fields
-            Integer uniqueID = assignment.getUniqueID();
-            List<Row> udf = getContainerUDF(uniqueID, udfVals);
-            for (Row r : udf)
-            {
-               addUDFValue(FieldTypeClass.ASSIGNMENT, assignment, r);
-            }
+            populateUserDefinedFieldValues("TASKRSRC", FieldTypeClass.ASSIGNMENT, assignment, assignment.getUniqueID());
 
             m_eventManager.fireAssignmentReadEvent(assignment);
          }
@@ -1573,7 +1575,7 @@ final class PrimaveraReader
       {
          if (remainingDuration == 0)
          {
-            if (row.getString("status_code").equals("TK_Complete"))
+            if ("TK_Complete".equals(row.getString("status_code")))
             {
                result = 100;
             }
@@ -1663,6 +1665,8 @@ final class PrimaveraReader
       map.put(TaskField.LATE_FINISH, "late_end_date");
       map.put(TaskField.EARLY_START, "early_start_date");
       map.put(TaskField.EARLY_FINISH, "early_end_date");
+      map.put(TaskField.REMAINING_EARLY_START, "restart_date");
+      map.put(TaskField.REMAINING_EARLY_FINISH, "reend_date");
       map.put(TaskField.BASELINE_START, "target_start_date");
       map.put(TaskField.BASELINE_FINISH, "target_end_date");
       map.put(TaskField.CONSTRAINT_TYPE, "cstr_type");
@@ -1730,7 +1734,7 @@ final class PrimaveraReader
    private Map<Integer, ProjectCalendar> m_calMap = new HashMap<Integer, ProjectCalendar>();
    private DateFormat m_calendarTimeFormat = new SimpleDateFormat("HH:mm");
    private Integer m_defaultCalendarID;
-   private Map<Integer, String> m_udfMap = new HashMap<Integer, String>();
+
    private final UserFieldCounters m_taskUdfCounters;
    private final UserFieldCounters m_resourceUdfCounters;
    private final UserFieldCounters m_assignmentUdfCounters;
@@ -1740,6 +1744,12 @@ final class PrimaveraReader
    private Map<FieldType, String> m_assignmentFields;
    private List<ExternalPredecessorRelation> m_externalPredecessors = new ArrayList<ExternalPredecessorRelation>();
    private final boolean m_matchPrimaveraWBS;
+
+   private Map<Integer, String> m_udfFields = new HashMap<Integer, String>();
+   private Map<String, Map<Integer, List<Row>>> m_udfValues = new HashMap<String, Map<Integer, List<Row>>>();
+
+   private Map<Integer, ActivityCodeValue> m_activityCodeMap = new HashMap<Integer, ActivityCodeValue>();
+   private Map<Integer, List<Integer>> m_activityCodeAssignments = new HashMap<Integer, List<Integer>>();
 
    private static final Map<String, ResourceType> RESOURCE_TYPE_MAP = new HashMap<String, ResourceType>();
 
@@ -1844,8 +1854,11 @@ final class PrimaveraReader
    private static final Map<String, FieldTypeClass> FIELD_TYPE_MAP = new HashMap<String, FieldTypeClass>();
    static
    {
+      FIELD_TYPE_MAP.put("PROJWBS", FieldTypeClass.TASK);
       FIELD_TYPE_MAP.put("TASK", FieldTypeClass.TASK);
       FIELD_TYPE_MAP.put("RSRC", FieldTypeClass.RESOURCE);
       FIELD_TYPE_MAP.put("TASKRSRC", FieldTypeClass.ASSIGNMENT);
    }
+
+   private static final long EXCEPTION_EPOCH = -2209161599935L;
 }

@@ -42,6 +42,10 @@ import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import javax.xml.transform.sax.SAXSource;
 
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
+
 import net.sf.mpxj.ChildTaskContainer;
 import net.sf.mpxj.Day;
 import net.sf.mpxj.Duration;
@@ -79,10 +83,6 @@ import net.sf.mpxj.phoenix.schema.Project.Storepoints.Storepoint.Relationships.R
 import net.sf.mpxj.phoenix.schema.Project.Storepoints.Storepoint.Resources;
 import net.sf.mpxj.phoenix.schema.Project.Storepoints.Storepoint.Resources.Resource.Assignment;
 import net.sf.mpxj.reader.AbstractProjectReader;
-
-import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
-import org.xml.sax.XMLReader;
 
 /**
  * This class creates a new ProjectFile instance by reading a Phoenix Project Manager file.
@@ -144,7 +144,7 @@ public final class PhoenixReader extends AbstractProjectReader
 
          Project phoenixProject = (Project) unmarshaller.unmarshal(doc);
          Storepoint storepoint = getCurrentStorepoint(phoenixProject);
-         readProjectProperties(phoenixProject.getSettings());
+         readProjectProperties(phoenixProject.getSettings(), storepoint);
          readCalendars(storepoint);
          readTasks(phoenixProject, storepoint);
          readResources(storepoint);
@@ -188,12 +188,14 @@ public final class PhoenixReader extends AbstractProjectReader
     * This method extracts project properties from a Phoenix file.
     *
     * @param phoenixSettings Phoenix settings
+    * @param storepoint Current storepoint
     */
-   private void readProjectProperties(Settings phoenixSettings)
+   private void readProjectProperties(Settings phoenixSettings, Storepoint storepoint)
    {
       ProjectProperties mpxjProperties = m_projectFile.getProjectProperties();
       mpxjProperties.setName(phoenixSettings.getTitle());
       mpxjProperties.setDefaultDurationUnits(phoenixSettings.getBaseunit());
+      mpxjProperties.setStatusDate(storepoint.getDataDate());
    }
 
    /**
@@ -420,6 +422,11 @@ public final class PhoenixReader extends AbstractProjectReader
 
                if (codeValue1 == null || codeValue2 == null)
                {
+                  if (codeValue1 == null && codeValue2 == null)
+                  {
+                     continue;
+                  }
+
                   if (codeValue1 == null)
                   {
                      return -1;
@@ -566,7 +573,7 @@ public final class PhoenixReader extends AbstractProjectReader
       // Work through the activity codes in sequence
       //
       ChildTaskContainer parent = m_projectFile;
-      StringBuffer uniqueIdentifier = new StringBuffer();
+      StringBuilder uniqueIdentifier = new StringBuilder();
       for (UUID activityCode : m_codeSequence)
       {
          UUID activityCodeValue = map.get(activityCode);
@@ -664,8 +671,8 @@ public final class PhoenixReader extends AbstractProjectReader
     */
    private void readRelation(Relationship relation)
    {
-      Task predecessor = m_projectFile.getTaskByUniqueID(relation.getPredecessor());
-      Task successor = m_projectFile.getTaskByUniqueID(relation.getSuccessor());
+      Task predecessor = m_activityMap.get(relation.getPredecessor());
+      Task successor = m_activityMap.get(relation.getSuccessor());
       if (predecessor != null && successor != null)
       {
          Duration lag = relation.getLag();

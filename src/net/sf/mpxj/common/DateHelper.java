@@ -438,6 +438,21 @@ public final class DateHelper
    public static final Date LAST_DATE = DateHelper.getTimestampFromLong(2524607946000L);
 
    /**
+    * Number of milliseconds per minute.
+    */
+   public static final long MS_PER_MINUTE = 60 * 1000;
+
+   /**
+    * Number of milliseconds per minute.
+    */
+   public static final long MS_PER_HOUR = 60 * MS_PER_MINUTE;
+
+   /**
+    * Number of milliseconds per day.
+    */
+   public static final long MS_PER_DAY = 24 * MS_PER_HOUR;
+
+   /**
     * Default value to use for DST savings if we are using a version
     * of Java < 1.4.
     */
